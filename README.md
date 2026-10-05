@@ -1,32 +1,32 @@
-# Motor 2D · Backend (Python)
+# 2D Engine · Backend (Python)
 
-API en FastAPI. Por ahora solo tiene `GET /health` y las estructuras de datos propias (sin `list.append/pop`, `deque` ni `queue.Queue`).
+FastAPI API. For now it only has `GET /health` and the hand-written data structures (no `list.append/pop`, `deque` or `queue.Queue`).
 
-## Ejecutar en local (PowerShell)
+## Run locally (PowerShell)
 
 ```powershell
 python -m venv .venv
 .venv\Scripts\Activate.ps1
 pip install -r requirements-dev.txt
-python -m pytest            # pruebas
+python -m pytest            # tests
 uvicorn app.main:app --reload
 ```
 
-Abre http://127.0.0.1:8000/health, que debe responder `{"ok": true}`. La documentación automática está en `/docs`.
+Open http://127.0.0.1:8000/health, which must answer `{"ok": true}`. The automatic docs are at `/docs`.
 
-## Estructuras y ejercicios del plan
+## Structures and plan exercises
 
-| Código | Ejercicio | Qué demuestra |
+| Code | Exercise | What it shows |
 |---|---|---|
-| `app/estructuras/pila.py` | 3, pila de posiciones | LIFO, tope, deshacer; O(1) |
-| `app/estructuras/cola.py` | 4, cola de eventos | FIFO con frente y final; O(1) |
-| `app/estructuras/arbol.py` | 5, árbol de expresión | recorrido en posorden; O(n) |
-| `app/dominio/contador.py` | 1, contador de puntos | regla de cada evento |
+| `app/structures/stack.py` | 3, position stack | LIFO, top, undo; O(1) |
+| `app/structures/queue.py` | 4, event queue | FIFO with front and rear; O(1) |
+| `app/structures/tree.py` | 5, expression tree | postorder traversal; O(n) |
+| `app/domain/score_counter.py` | 1, score counter | rule for each event |
 
-Cada archivo documenta su invariante, sus costos y qué pasa con la estructura vacía.
+Each file documents its invariant, its costs and what happens when the structure is empty.
 
-## Despliegue (Render u otro servicio similar)
+## Deployment (Render or similar)
 
-- Comando de arranque: `uvicorn app.main:app --host 0.0.0.0 --port $PORT`
-- Dependencias: `requirements.txt`
-- Las claves (`API_KEY`, `DATABASE_URL`) van como variables de entorno del servicio, nunca en el código.
+- Start command: `uvicorn app.main:app --host 0.0.0.0 --port $PORT`
+- Dependencies: `requirements.txt`
+- Secrets (`API_KEY`, `DATABASE_URL`) go in the service's environment variables, never in the code.

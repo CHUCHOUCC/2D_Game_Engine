@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 
-app = FastAPI(title="Motor 2D")
+app = FastAPI(title="2D Engine")
 
 
 @app.get("/health")
