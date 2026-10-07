@@ -1,4 +1,4 @@
-from app.structures.node import LinkedList
+from app.structures.linked_list import LinkedList
 
 
 def test_new_list_is_empty():
