@@ -37,6 +37,7 @@ Copy `.env.example` to `.env` and set `DATABASE_URL` (never commit `.env`).
 | `GET /projects` | List the owner's projects |
 | `GET /projects/{id}` | Load one project |
 | `PUT /projects/{id}/scene` | Save the scene (list of game objects) |
+| `POST /projects/{id}/ai` | Ask the separate AI service for objects and add them to the scene |
 
 Every project query filters by `owner_id`, so one user cannot read or change another user's project.
 Until the login module is finished, the owner is a fixed demo user (id 1).
@@ -45,5 +46,5 @@ Until the login module is finished, the owner is a fixed demo user (id 1).
 
 - Start command: `uvicorn app.main:app --host 0.0.0.0 --port $PORT`
 - Dependencies: `requirements.txt`
-- Environment variables: `DATABASE_URL` and `FRONTEND_ORIGINS` (allowed browser origins, comma separated)
+- Environment variables: `DATABASE_URL`, `FRONTEND_ORIGINS` (allowed browser origins, comma separated), `AI_SERVICE_URL` and `AI_SERVICE_KEY` (the separate AI service and the secret it shares with this backend)
 - Secrets (`API_KEY`, `DATABASE_URL`) go in the service's environment variables, never in the code.
