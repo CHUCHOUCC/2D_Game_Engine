@@ -1,6 +1,6 @@
 import re
 
-from app.auth.TokenGenerator import TokenGenerator
+from app.auth.token_generator import TokenGenerator
 
 
 def test_generate_returns_a_long_url_safe_string():

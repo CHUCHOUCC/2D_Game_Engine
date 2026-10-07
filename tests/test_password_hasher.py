@@ -1,4 +1,4 @@
-from app.auth.PasswordHasher import PasswordHasher
+from app.auth.password_hasher import PasswordHasher
 
 
 def test_create_returns_salt_and_hash_as_bytes():
