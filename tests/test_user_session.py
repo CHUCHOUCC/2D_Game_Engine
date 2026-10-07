@@ -3,7 +3,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from app.auth.session import Session
-from app.auth.User import User
+from app.auth.user import User
 
 
 def make_user():
