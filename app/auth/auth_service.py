@@ -1,3 +1,5 @@
+from app.auth.errors import InvalidCredentialsError
+from app.auth.session import Session
 from datetime import timedelta
 from datetime import datetime, timezone
 # How long a token stays valid. You choose it (for example 1 hour).
@@ -23,16 +25,18 @@ class AuthService:
 
 
     def log_in(self, email, password):
-        """Check the credentials and return a NEW token (a string).
+        clean_email = email.strip().lower()
+        user = self._users.find_by_email(clean_email)
 
-        - Clean the email like in register.
-        - Unknown email or wrong password: raise InvalidCredentialsError (the same error,
-          so nobody can find out which emails exist).
-        - Generate a token, and save a Session with the HASH of the token and an
-          expiry date in UTC (now + the session duration). The token itself is never saved.
-        """
-        raise NotImplementedError
+        if user is None or self._hasher.verify(password,user.salt,user.password_hash) == False:
+            raise InvalidCredentialsError
 
+        token = self._tokens.generate()
+        expires_at = datetime.now(timezone.utc) + self._session_duration
+
+        self._sessions.create(Session(user.id, self._tokens.hash(token), expires_at))
+        return token
+    
     def user_from_token(self, token):
         """Return the User that owns this token, or raise InvalidTokenError.
 
