@@ -1,0 +1,48 @@
+from datetime import timedelta
+from datetime import datetime, timezone
+# How long a token stays valid. You choose it (for example 1 hour).
+SESSION_DURATION = timedelta(hours=1)
+
+
+
+class AuthService:
+
+    def __init__(self, users, sessions, hasher, tokens, session_duration=SESSION_DURATION):
+        self._users = users
+        self._sessions = sessions
+        self._hasher = hasher
+        self._tokens = tokens
+        self._session_duration = session_duration
+
+
+    def register(self, username, email, password):
+        clean_email = email.strip().lower()
+        salt , password_hash = self._hasher.create(password)
+
+        return self._users.create(username, clean_email, salt, password_hash)
+
+
+    def log_in(self, email, password):
+        """Check the credentials and return a NEW token (a string).
+
+        - Clean the email like in register.
+        - Unknown email or wrong password: raise InvalidCredentialsError (the same error,
+          so nobody can find out which emails exist).
+        - Generate a token, and save a Session with the HASH of the token and an
+          expiry date in UTC (now + the session duration). The token itself is never saved.
+        """
+        raise NotImplementedError
+
+    def user_from_token(self, token):
+        """Return the User that owns this token, or raise InvalidTokenError.
+
+        - Look the session up by the hash of the token.
+        - Missing session -> InvalidTokenError.
+        - Expired session -> delete it and raise InvalidTokenError.
+        - Session whose user no longer exists -> InvalidTokenError.
+        """
+        raise NotImplementedError
+
+    def log_out(self, token):
+        """Delete the session of this token. An unknown token is not an error."""
+        raise NotImplementedError
