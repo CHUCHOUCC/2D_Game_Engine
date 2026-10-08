@@ -5,7 +5,9 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field, ValidationError
 
 from app.ai_client import AiServiceClient, AiServiceError
-from app.database import get_connection
+from app.auth.dependencies import current_user
+from app.auth.user import User
+from app.database import database_connection
 from .repository import ProjectRepository
 
 router = APIRouter(prefix="/projects", tags=["projects"])
@@ -30,14 +32,9 @@ class AiRequest(BaseModel):
     prompt: str = Field(min_length=1, max_length=500)
 
 
-def get_repository():
-    """Provide a repository bound to one connection per request.
-
-    The transaction is committed when the request succeeds and rolled back
-    if it raises.
-    """
-    with get_connection() as connection:
-        yield ProjectRepository(connection)
+def get_repository(connection=Depends(database_connection)):
+    """Provide a project repository bound to the request's shared connection."""
+    return ProjectRepository(connection)
 
 
 def get_ai_client() -> AiServiceClient:
@@ -48,10 +45,9 @@ def get_ai_client() -> AiServiceClient:
     return AiServiceClient(url, key)
 
 
-def current_owner_id() -> int:
-    # TEMPORARY: always the demo user (id 1) until AuthService reads the
-    # token and returns the real user.
-    return 1
+def current_owner_id(user: User = Depends(current_user)) -> int:
+    """The id of the logged-in user: every project query is filtered by it."""
+    return user.id
 
 
 def _to_json(project):

@@ -14,3 +14,12 @@ def get_connection():
     if not url:
         raise RuntimeError("DATABASE_URL is not set")
     return psycopg.connect(url, row_factory=dict_row, prepare_threshold=None)
+
+
+def database_connection():
+    """FastAPI dependency: one connection per request, shared by every repository.
+
+    The transaction is committed when the request succeeds and rolled back if it raises.
+    """
+    with get_connection() as connection:
+        yield connection
