@@ -1,3 +1,4 @@
+from app.auth.errors import InvalidCredentialsError, InvalidTokenError
 from app.auth.errors import InvalidCredentialsError
 from app.auth.session import Session
 from datetime import timedelta
@@ -38,15 +39,25 @@ class AuthService:
         return token
     
     def user_from_token(self, token):
-        """Return the User that owns this token, or raise InvalidTokenError.
+        token_hash = self._tokens.hash(token)
+        session = self._sessions.find_by_token_hash(token_hash)
 
-        - Look the session up by the hash of the token.
-        - Missing session -> InvalidTokenError.
-        - Expired session -> delete it and raise InvalidTokenError.
-        - Session whose user no longer exists -> InvalidTokenError.
-        """
-        raise NotImplementedError
+        if session is None:
+            raise InvalidTokenError
+
+        if not session.is_valid():
+            self._sessions.delete(token_hash)
+            raise InvalidTokenError
+
+        
+        user = self._users.find_by_id(session.user_id)
+
+        if user is None:
+            raise InvalidTokenError
+
+        return user
+
 
     def log_out(self, token):
-        """Delete the session of this token. An unknown token is not an error."""
-        raise NotImplementedError
+        hash_token = self._tokens.hash(token)
+        self._sessions.delete(hash_token)
