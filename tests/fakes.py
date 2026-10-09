@@ -109,6 +109,9 @@ class FakeLoginAttempts:
     def failures_since(self, email, since):
         return sum(1 for e, _, ok, at in self.attempts if e == email and not ok and at >= since)
 
+    def failures_from_ip_since(self, ip_address, since):
+        return sum(1 for _, ip, ok, at in self.attempts if ip == ip_address and not ok and at >= since)
+
 
 class FakeAuditLog:
 
