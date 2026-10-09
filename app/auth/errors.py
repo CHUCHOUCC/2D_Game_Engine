@@ -12,3 +12,7 @@ class InvalidCredentialsError(AuthError):
 
 class InvalidTokenError(AuthError):
     """The token is unknown, expired or logged out."""
+
+
+class TooManyAttemptsError(AuthError):
+    """Too many failed logins for this email in a short time."""
