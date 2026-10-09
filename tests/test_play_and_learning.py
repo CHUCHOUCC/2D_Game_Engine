@@ -4,9 +4,9 @@ from app.ai_learning.dependencies import get_ai_models, get_optional_ai_client
 from app.auth.dependencies import current_user
 from app.auth.user import User
 from app.main import app
-from app.play.router import get_plays
+from app.play.router import get_achievements, get_plays
 from app.projects.router import get_ai_client, get_repository
-from tests.fakes_game import FakeAiModelRepository, FakeLearningAi, FakePlayRepository
+from tests.fakes_game import FakeAchievementRepository, FakeAiModelRepository, FakeLearningAi, FakePlayRepository
 from tests.test_projects import FakeProjectRepository
 
 RUN = {
@@ -21,6 +21,8 @@ class World:
         self.projects = FakeProjectRepository()
         self.plays = FakePlayRepository()
         self.models = FakeAiModelRepository()
+        self.achievements = FakeAchievementRepository()
+        app.dependency_overrides[get_achievements] = lambda: self.achievements
         self.ai = ai
         self.user = User(user_id, "jesus", "j@example.com", b"s", b"h")
         app.dependency_overrides[get_repository] = lambda: self.projects
@@ -53,7 +55,8 @@ def test_finish_run_without_ai_still_saves_everything():
     world = World(ai=None)
     response = play(world)
     assert response.status_code == 200
-    assert response.json() == {"learned": False, "difficulty": 0.5}
+    assert response.json()["learned"] is False
+    assert response.json()["difficulty"] == 0.5
     assert world.plays.runs[1]["result"].score == 120
     assert world.plays.stats[1]["games_played"] == 1
     assert world.plays.scores == [(world.project_id, 1, 120)]
@@ -147,3 +150,14 @@ def test_model_endpoint_shows_what_was_learned():
     model = world.client.get(f"/projects/{world.project_id}/ai/model").json()
     assert model["samples_seen"] == 1
     assert round(model["difficulty"], 2) == 0.6
+
+
+def test_finishing_runs_unlocks_achievements_once():
+    world = World()
+    first = play(world).json()["achievements"]
+    assert first == ["first-coin", "first-win"]
+    perfect = {**RUN, "coins_collected": 6, "damage_taken": 0}
+    assert play(world, perfect).json()["achievements"] == ["coin-hoarder", "untouchable"]
+    assert play(world, perfect).json()["achievements"] == []
+    codes = [a["code"] for a in world.client.get("/me/achievements").json()]
+    assert codes == ["first-coin", "first-win", "coin-hoarder", "untouchable"]
