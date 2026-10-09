@@ -63,3 +63,8 @@ class UserRepository:
 
     def touch_last_login(self, user_id: int) -> None:
         self._connection.execute("update users set last_login_at = now() where id = %s", (user_id,))
+
+    def update_password(self, user_id: int, salt: bytes, password_hash: bytes) -> None:
+        self._connection.execute(
+            "update users set salt = %s, password_hash = %s where id = %s", (salt, password_hash, user_id)
+        )
