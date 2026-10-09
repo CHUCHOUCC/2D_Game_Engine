@@ -46,6 +46,11 @@ for every table and for running the SQL tests on a throw-away PostgreSQL.
 JWT access tokens (15 min), rotating refresh tokens (7 days, reuse detection) and signed service
 tokens between the backend and the AI service. See [docs/tokens.md](docs/tokens.md).
 
+## Security
+
+Rate limits, body size limit, request ids, strict headers, password policy, start-up checks of the
+secrets and more: see [docs/security.md](docs/security.md).
+
 ## API
 
 All routes except `/health`, `/auth/register`, `/auth/login` and `/auth/refresh` need
@@ -59,6 +64,7 @@ another user's project answers 404.
 | `POST /auth/refresh` | Rotate the refresh token and get a new pair |
 | `GET /auth/me` | The logged-in user |
 | `POST /auth/logout`, `POST /auth/logout-all` | Revoke this login or every login |
+| `POST /auth/password` | Change the password; ends the other sessions |
 | `GET/PUT /me/settings` | Theme, language, grid, volumes (settings wheel) |
 | `GET/PUT /me/profile`, `GET /me/activity` | Profile and recent security events |
 | `GET /me/stats`, `GET /me/achievements` | Player totals and unlocked achievements |
@@ -122,5 +128,6 @@ CI (`.github/workflows/tests.yml`) runs everything against PostgreSQL 16.
 - Start command: `uvicorn app.main:app --host 0.0.0.0 --port $PORT`
 - Before the first start and after every update: `python -m app.migrate`
 - Once a day (optional): `python -m app.maintenance`
-- Environment variables: `DATABASE_URL`, `JWT_SECRET`, `FRONTEND_ORIGINS`, `AI_SERVICE_URL`,
-  `AI_SERVICE_KEY`. Secrets go in the service settings, never in the code.
+- Environment variables: `ENVIRONMENT=production`, `DATABASE_URL`, `JWT_SECRET`, `FRONTEND_ORIGINS`,
+  `AI_SERVICE_URL`, `AI_SERVICE_KEY`, `TRUSTED_PROXY_HOPS=1`. Secrets go in the service settings, never
+  in the code; the API refuses to start in production if they are weak.
