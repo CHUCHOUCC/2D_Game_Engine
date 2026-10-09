@@ -8,6 +8,8 @@ from .errors import InvalidTokenError
 
 ALGORITHM = "HS256"
 ACCESS_TOKEN_TYPE = "access"
+# Who the access token is for: a token minted for another audience is refused.
+ACCESS_AUDIENCE = "2d-engine-api"
 
 
 @dataclass(frozen=True)
@@ -43,7 +45,9 @@ class JwtCodec:
             "sub": str(user_id),
             "jti": claims.jti,
             "iss": self._issuer,
+            "aud": ACCESS_AUDIENCE,
             "iat": now,
+            "nbf": now,
             "exp": claims.expires_at,
             "type": ACCESS_TOKEN_TYPE,
             "roles": list(claims.roles),
@@ -57,7 +61,9 @@ class JwtCodec:
                 self._secret,
                 algorithms=[ALGORITHM],
                 issuer=self._issuer,
-                options={"require": ["sub", "jti", "exp", "iss", "type"]},
+                audience=ACCESS_AUDIENCE,
+                leeway=5,
+                options={"require": ["sub", "jti", "exp", "iss", "aud", "type"]},
             )
         except jwt.PyJWTError as error:
             raise InvalidTokenError(type(error).__name__) from error
