@@ -8,6 +8,8 @@ from .token_pair import TokenPair
 REFRESH_DURATION = timedelta(days=7)
 # After this many failed logins in LOCKOUT_WINDOW the email is locked for a while.
 MAX_FAILED_LOGINS = 5
+# One address trying many emails is also slowed down.
+MAX_FAILED_LOGINS_PER_IP = 20
 LOCKOUT_WINDOW = timedelta(minutes=15)
 DEFAULT_ROLE = "creator"
 
@@ -45,7 +47,7 @@ class AuthService:
 
     def log_in(self, email, password, ip_address="", user_agent="") -> TokenPair:
         clean_email = email.strip().lower()
-        self._check_not_locked(clean_email)
+        self._check_not_locked(clean_email, ip_address)
         user = self._users.find_by_email(clean_email)
         if user is None:
             self._hasher.verify(password, self._dummy_salt, self._dummy_hash)
@@ -110,11 +112,13 @@ class AuthService:
         pair = TokenPair(access, refresh, int(self._jwt.access_duration.total_seconds()))
         return (pair, stored) if return_stored else pair
 
-    def _check_not_locked(self, email):
+    def _check_not_locked(self, email, ip_address=""):
         if self._attempts is None:
             return
         since = datetime.now(timezone.utc) - LOCKOUT_WINDOW
         if self._attempts.failures_since(email, since) >= MAX_FAILED_LOGINS:
+            raise TooManyAttemptsError
+        if ip_address and self._attempts.failures_from_ip_since(ip_address, since) >= MAX_FAILED_LOGINS_PER_IP:
             raise TooManyAttemptsError
 
     def _record(self, user_id, action, **extra):
