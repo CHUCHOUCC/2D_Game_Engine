@@ -52,6 +52,8 @@ def configuration_problems(env=os.environ) -> list:
             problems.append(f"FRONTEND_ORIGINS must use https in production: {', '.join(insecure)}")
         if env.get("AI_SERVICE_URL", "").startswith("http://"):
             problems.append("AI_SERVICE_URL must use https in production")
+        if env.get("RATE_LIMIT_MULTIPLIER", "1").strip() not in ("", "1"):
+            problems.append("RATE_LIMIT_MULTIPLIER is only for automated tests, never production")
     return problems
 
 

@@ -59,6 +59,7 @@ app.add_middleware(
     RateLimitMiddleware,
     limiter=app.state.rate_limiter,
     trusted_proxy_hops=int(os.environ.get("TRUSTED_PROXY_HOPS", "0")),
+    multiplier=int(os.environ.get("RATE_LIMIT_MULTIPLIER", "1")),
 )
 app.add_middleware(BodyLimitMiddleware)
 app.add_middleware(RequestContextMiddleware)

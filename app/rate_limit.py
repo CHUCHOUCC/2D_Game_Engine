@@ -78,11 +78,14 @@ def client_ip(scope, trusted_proxy_hops: int = 0) -> str:
 class RateLimitMiddleware:
     """ASGI middleware that applies the rules to every HTTP request."""
 
-    def __init__(self, app, limiter: SlidingWindowLimiter, rules=DEFAULT_RULES, trusted_proxy_hops: int = 0):
+    def __init__(self, app, limiter: SlidingWindowLimiter, rules=DEFAULT_RULES, trusted_proxy_hops: int = 0,
+                 multiplier: int = 1):
         self.app = app
         self.limiter = limiter
         self.rules = rules
         self.trusted_proxy_hops = trusted_proxy_hops
+        # Only automated test environments raise this (config.py forbids it in production).
+        self.multiplier = max(1, multiplier)
 
     def _rules_for(self, method: str, path: str):
         for rule in self.rules:
@@ -97,7 +100,7 @@ class RateLimitMiddleware:
             return
         ip = client_ip(scope, self.trusted_proxy_hops)
         for rule in self._rules_for(scope["method"], scope["path"]):
-            wait = self.limiter.hit(f"{rule.name}:{ip}", rule.limit, rule.window)
+            wait = self.limiter.hit(f"{rule.name}:{ip}", rule.limit * self.multiplier, rule.window)
             if wait:
                 await _too_many_requests(send, math.ceil(wait))
                 return

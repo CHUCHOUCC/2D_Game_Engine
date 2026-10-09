@@ -45,6 +45,12 @@ def test_production_requires_https_origins_and_no_wildcard():
     assert any("'*'" in p for p in problems)
 
 
+def test_relaxed_rate_limits_are_refused_in_production():
+    env = {**GOOD_ENV, "ENVIRONMENT": "production", "RATE_LIMIT_MULTIPLIER": "20"}
+    assert any("RATE_LIMIT_MULTIPLIER" in p for p in configuration_problems(env))
+    assert configuration_problems({**GOOD_ENV, "RATE_LIMIT_MULTIPLIER": "20"}) == []
+
+
 def test_production_refuses_to_start_but_development_only_warns():
     weak = {**GOOD_ENV, "JWT_SECRET": ""}
     with pytest.raises(InsecureConfigurationError):
