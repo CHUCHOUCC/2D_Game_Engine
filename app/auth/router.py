@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 
 from .auth_service import AuthService
-from .dependencies import bearer_token, current_user, get_auth_service
+from .dependencies import bearer_token, current_user, get_auth_service, get_commit
 from .errors import EmailAlreadyRegisteredError, InvalidCredentialsError, InvalidTokenError, TooManyAttemptsError
 from .user import User
 
@@ -49,21 +49,25 @@ def register(body: RegisterIn, service: AuthService = Depends(get_auth_service))
 
 
 @router.post("/login")
-def log_in(body: LoginIn, request: Request, service: AuthService = Depends(get_auth_service)):
+def log_in(body: LoginIn, request: Request, service: AuthService = Depends(get_auth_service),
+           commit=Depends(get_commit)):
     try:
         pair = service.log_in(body.email, body.password, _client_ip(request), request.headers.get("user-agent", ""))
     except TooManyAttemptsError:
         raise HTTPException(status_code=429, detail="Too many failed attempts, try again later")
     except InvalidCredentialsError:
+        commit()  # keep the failed attempt, or the lockout could never count it
         raise HTTPException(status_code=401, detail="Invalid email or password")
     return pair.to_json()
 
 
 @router.post("/refresh")
-def refresh(body: RefreshIn, request: Request, service: AuthService = Depends(get_auth_service)):
+def refresh(body: RefreshIn, request: Request, service: AuthService = Depends(get_auth_service),
+            commit=Depends(get_commit)):
     try:
         pair = service.refresh(body.refresh_token, request.headers.get("user-agent", ""))
     except InvalidTokenError:
+        commit()  # keep a family revocation caused by a reused token
         raise HTTPException(status_code=401, detail="Invalid refresh token")
     return pair.to_json()
 
