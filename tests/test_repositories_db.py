@@ -33,7 +33,6 @@ def users(connection):
     return UserRepository(connection)
 
 
-
 def new_user(users, email="repo-test@example.com"):
     return users.create("repo-test", email, b"\x01" * 16, b"\x02" * 64)
 
