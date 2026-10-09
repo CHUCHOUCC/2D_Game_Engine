@@ -135,3 +135,12 @@ def test_audit_log_records_actions(connection, users):
     entries = log.recent_for_user(user.id)
     assert entries[0]["action"] == "user.login"
     assert entries[0]["details"] == {"ok": True}
+
+
+def test_login_failures_are_counted_per_address(connection):
+    attempts = LoginAttemptRepository(connection)
+    attempts.record("a@example.com", "9.9.9.9", False)
+    attempts.record("b@example.com", "9.9.9.9", False)
+    since = datetime.now(timezone.utc) - timedelta(minutes=1)
+    assert attempts.failures_from_ip_since("9.9.9.9", since) == 2
+    assert attempts.failures_from_ip_since("8.8.8.8", since) == 0
