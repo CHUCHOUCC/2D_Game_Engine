@@ -1,12 +1,9 @@
 from fastapi.testclient import TestClient
 
-from app.auth.auth_service import AuthService
 from app.auth.dependencies import get_auth_service
-from app.auth.password_hasher import PasswordHasher
-from app.auth.token_generator import TokenGenerator
 from app.main import app
 from app.projects.router import get_repository
-from tests.fakes import FakeSessionRepository, FakeUserRepository
+from tests.fakes import AuthFixture
 from tests.test_projects import FakeProjectRepository
 
 PASSWORD = "correct horse"
@@ -14,7 +11,7 @@ PASSWORD = "correct horse"
 
 def make_client():
     """A client with the real routes, the real AuthService and in-memory repositories."""
-    service = AuthService(FakeUserRepository(), FakeSessionRepository(), PasswordHasher(), TokenGenerator())
+    service = AuthFixture().service
     projects = FakeProjectRepository()
     app.dependency_overrides[get_auth_service] = lambda: service
     app.dependency_overrides[get_repository] = lambda: projects
@@ -115,3 +112,56 @@ def test_a_user_cannot_see_or_change_another_users_project():
     assert client.get(f"/projects/{project_id}", headers=bob).status_code == 404
     assert client.put(f"/projects/{project_id}/scene", json={"scene": []}, headers=bob).status_code == 404
     assert client.get("/projects", headers=bob).json() == []
+
+
+def test_login_returns_a_refresh_token_and_its_lifetime():
+    client = make_client()
+    register(client)
+    body = log_in(client).json()
+    assert set(body) == {"access_token", "refresh_token", "token_type", "expires_in"}
+    assert body["expires_in"] == 900
+
+
+def test_refresh_returns_a_new_working_pair():
+    client = make_client()
+    register(client)
+    first = log_in(client).json()
+    response = client.post("/auth/refresh", json={"refresh_token": first["refresh_token"]})
+    assert response.status_code == 200
+    second = response.json()
+    assert second["refresh_token"] != first["refresh_token"]
+    me = client.get("/auth/me", headers={"Authorization": "Bearer " + second["access_token"]})
+    assert me.status_code == 200
+
+
+def test_refresh_with_a_bad_token_returns_401():
+    client = make_client()
+    assert client.post("/auth/refresh", json={"refresh_token": "nope"}).status_code == 401
+
+
+def test_logout_with_the_refresh_token_revokes_it():
+    client = make_client()
+    register(client)
+    pair = log_in(client).json()
+    headers = {"Authorization": "Bearer " + pair["access_token"]}
+    client.post("/auth/logout", json={"refresh_token": pair["refresh_token"]}, headers=headers)
+    assert client.post("/auth/refresh", json={"refresh_token": pair["refresh_token"]}).status_code == 401
+
+
+def test_logout_all_needs_a_token_and_returns_204():
+    client = make_client()
+    assert client.post("/auth/logout-all").status_code == 401
+    assert client.post("/auth/logout-all", headers=auth_header(client)).status_code == 204
+
+
+def test_repeated_failed_logins_return_429():
+    client = make_client()
+    register(client)
+    for _ in range(5):
+        assert log_in(client, password="wrong password").status_code == 401
+    assert log_in(client).status_code == 429
+
+
+def test_register_rejects_a_blank_username():
+    client = make_client()
+    assert register(client, username="   ").status_code == 422
