@@ -7,7 +7,12 @@ HEADERS = {
     "Referrer-Policy": "no-referrer",
     "Content-Security-Policy": "default-src 'none'; frame-ancestors 'none'",
     "Cache-Control": "no-store",
+    "Permissions-Policy": "camera=(), microphone=(), geolocation=(), payment=()",
+    "Cross-Origin-Opener-Policy": "same-origin",
+    "Cross-Origin-Resource-Policy": "same-site",
 }
+# Browsers must only use HTTPS for a year once they saw the API over HTTPS.
+HSTS = "max-age=31536000; includeSubDomains"
 # The interactive docs load their own scripts and styles.
 DOCS_PATHS = ("/docs", "/redoc", "/openapi.json")
 
@@ -22,4 +27,12 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
             if is_docs and name == "Content-Security-Policy":
                 continue
             response.headers.setdefault(name, value)
+        if _is_https(request):
+            response.headers.setdefault("Strict-Transport-Security", HSTS)
         return response
+
+
+def _is_https(request) -> bool:
+    """True for HTTPS, also behind a proxy that terminates TLS (Render, Nginx)."""
+    forwarded = request.headers.get("x-forwarded-proto", "")
+    return request.url.scheme == "https" or forwarded.split(",")[0].strip() == "https"
