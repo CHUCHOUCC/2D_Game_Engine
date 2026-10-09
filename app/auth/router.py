@@ -4,6 +4,7 @@ from pydantic import BaseModel, Field
 from .auth_service import AuthService
 from .dependencies import bearer_token, current_user, get_auth_service, get_commit
 from .errors import EmailAlreadyRegisteredError, InvalidCredentialsError, InvalidTokenError, TooManyAttemptsError
+from .password_policy import WeakPasswordError
 from .user import User
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -26,6 +27,11 @@ class RefreshIn(BaseModel):
     refresh_token: str = Field(min_length=1, max_length=200)
 
 
+class PasswordChangeIn(BaseModel):
+    current_password: str = Field(min_length=1, max_length=128)
+    new_password: str = Field(min_length=8, max_length=128)
+
+
 class LogoutIn(BaseModel):
     refresh_token: str | None = Field(default=None, max_length=200)
 
@@ -45,6 +51,8 @@ def register(body: RegisterIn, service: AuthService = Depends(get_auth_service))
         user = service.register(body.username, body.email, body.password)
     except EmailAlreadyRegisteredError:
         raise HTTPException(status_code=409, detail="Email already registered")
+    except WeakPasswordError as error:
+        raise HTTPException(status_code=422, detail=str(error))
     return _user_json(user)
 
 
@@ -87,4 +95,18 @@ def log_out(body: LogoutIn | None = None, token: str = Depends(bearer_token),
 @router.post("/logout-all", status_code=204)
 def log_out_everywhere(user: User = Depends(current_user), service: AuthService = Depends(get_auth_service)):
     service.log_out_everywhere(user.id)
+    return Response(status_code=204)
+
+
+@router.post("/password", status_code=204)
+def change_password(body: PasswordChangeIn, user: User = Depends(current_user),
+                    service: AuthService = Depends(get_auth_service)):
+    """Change the password. Every refresh token of the account is revoked, so other
+    devices are logged out; the current access token keeps working until it expires."""
+    try:
+        service.change_password(user, body.current_password, body.new_password)
+    except InvalidCredentialsError:
+        raise HTTPException(status_code=400, detail="Current password is wrong")
+    except WeakPasswordError as error:
+        raise HTTPException(status_code=422, detail=str(error))
     return Response(status_code=204)
