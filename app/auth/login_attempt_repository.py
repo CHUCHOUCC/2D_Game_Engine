@@ -17,3 +17,11 @@ class LoginAttemptRepository:
             (email, since),
         ).fetchone()
         return row["n"]
+
+    def failures_from_ip_since(self, ip_address: str, since) -> int:
+        row = self._connection.execute(
+            "select count(*) as n from login_attempts "
+            "where ip_address = %s and succeeded = false and attempted_at >= %s",
+            (ip_address, since),
+        ).fetchone()
+        return row["n"]
