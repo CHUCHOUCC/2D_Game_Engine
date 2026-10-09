@@ -12,7 +12,7 @@ class FakeAiClient:
         self._error = error
         self.prompts = []
 
-    def generate(self, prompt):
+    def generate(self, prompt, scene=None):
         self.prompts.append(prompt)
         if self._error:
             raise self._error
@@ -89,3 +89,17 @@ def test_missing_configuration_returns_503(monkeypatch):
     client = TestClient(app)
     project_id = client.post("/projects", json={"name": "p"}).json()["id"]
     assert client.post(f"/projects/{project_id}/ai", json={"prompt": "x"}).status_code == 503
+
+
+def test_ai_cannot_add_a_second_player():
+    ai = FakeAiClient([{"id": "p", "kind": "player", "x": 1, "y": 1}, {"id": "w", "kind": "wall", "x": 5, "y": 5}])
+    client, _ = make_client(ai)
+    project_id = client.post("/projects", json={"name": "p"}).json()["id"]
+    scene = client.post(f"/projects/{project_id}/ai", json={"prompt": "x"}).json()["scene"]
+    assert [obj["kind"] for obj in scene] == ["wall"]
+
+
+def test_ai_objects_outside_the_world_are_rejected():
+    client, _ = make_client(FakeAiClient([{"id": "a", "kind": "box", "x": 99999, "y": 1}]))
+    project_id = client.post("/projects", json={"name": "p"}).json()["id"]
+    assert client.post(f"/projects/{project_id}/ai", json={"prompt": "x"}).status_code == 502
