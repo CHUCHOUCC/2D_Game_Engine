@@ -213,3 +213,14 @@ def test_log_out_everywhere_revokes_every_refresh_token():
     for pair in (one, two):
         with pytest.raises(InvalidTokenError):
             fixture.service.refresh(pair.refresh_token)
+
+
+def test_one_address_failing_on_many_emails_is_locked_out():
+    fixture = AuthFixture()
+    registered(fixture)
+    for n in range(20):
+        with pytest.raises(InvalidCredentialsError):
+            fixture.service.log_in(f"guess{n}@example.com", "x", ip_address="6.6.6.6")
+    with pytest.raises(TooManyAttemptsError):
+        fixture.service.log_in("jesus@example.com", PASSWORD, ip_address="6.6.6.6")
+    assert fixture.service.log_in("jesus@example.com", PASSWORD, ip_address="1.1.1.1")
