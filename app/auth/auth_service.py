@@ -2,6 +2,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 
 from .errors import InvalidCredentialsError, InvalidTokenError, TooManyAttemptsError
+from .password_policy import WeakPasswordError, check_password
 from .token_pair import TokenPair
 
 # How long a refresh token stays valid; the access token lives much less (JwtCodec).
@@ -39,6 +40,7 @@ class AuthService:
 
     def register(self, username, email, password):
         clean_email = email.strip().lower()
+        check_password(password, clean_email, username.strip())
         salt, password_hash = self._hasher.create(password)
         user = self._users.create(username.strip(), clean_email, salt, password_hash)
         self._users.add_role(user.id, DEFAULT_ROLE)
@@ -99,6 +101,18 @@ class AuthService:
             stored = self._refresh_tokens.find_by_hash(self._tokens.hash(refresh_token))
             if stored is not None and (claims is None or stored.user_id == claims.user_id):
                 self._refresh_tokens.revoke_family(stored.family_id)
+
+    def change_password(self, user, current_password, new_password) -> None:
+        """Check the current password, store the new one and end every other login."""
+        if not self._hasher.verify(current_password, user.salt, user.password_hash):
+            raise InvalidCredentialsError
+        if current_password == new_password:
+            raise WeakPasswordError("New password must be different")
+        check_password(new_password, user.email, user.username)
+        salt, password_hash = self._hasher.create(new_password)
+        self._users.update_password(user.id, salt, password_hash)
+        self._refresh_tokens.revoke_all_for_user(user.id)
+        self._record(user.id, "user.password_changed")
 
     def log_out_everywhere(self, user_id: int) -> None:
         self._refresh_tokens.revoke_all_for_user(user_id)
