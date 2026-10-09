@@ -1,4 +1,5 @@
 import os
+from functools import lru_cache
 
 from fastapi import Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -21,12 +22,20 @@ from .user_repository import UserRepository
 _bearer = HTTPBearer(auto_error=False)
 
 
+@lru_cache(maxsize=4)
+def _codec_for(secret: str) -> JwtCodec:
+    return JwtCodec(secret)
+
+
 def get_jwt_codec() -> JwtCodec:
-    """The access-token signer, configured with JWT_SECRET (32+ characters)."""
+    """The access-token signer, configured with JWT_SECRET (32+ characters).
+
+    One codec per secret is reused across requests.
+    """
     secret = os.environ.get("JWT_SECRET", "")
     if len(secret) < 32:
         raise HTTPException(status_code=503, detail="JWT_SECRET is not configured")
-    return JwtCodec(secret)
+    return _codec_for(secret)
 
 
 def get_auth_service(connection=Depends(database_connection), jwt_codec: JwtCodec = Depends(get_jwt_codec)) -> AuthService:
@@ -41,6 +50,16 @@ def get_auth_service(connection=Depends(database_connection), jwt_codec: JwtCode
         attempts=LoginAttemptRepository(connection),
         audit=AuditLog(connection),
     )
+
+
+def get_commit(connection=Depends(database_connection)):
+    """Commit what the request wrote so far.
+
+    An error response rolls the request back. Routes call this first when the
+    rows written before the error must survive: a failed login attempt (for the
+    lockout) or the revocation of a stolen refresh-token family.
+    """
+    return connection.commit
 
 
 def _unauthorized() -> HTTPException:
