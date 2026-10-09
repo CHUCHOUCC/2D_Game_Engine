@@ -1,0 +1,122 @@
+"""SQL integration tests for projects, runs, AI models, settings and the catalog.
+
+They need TEST_DATABASE_URL pointing at a throw-away PostgreSQL that has run
+`python -m app.migrate`. Every test is rolled back at the end.
+"""
+import os
+
+import psycopg
+import pytest
+from psycopg.rows import dict_row
+
+from app.ai_learning.repository import AiModelRepository, difficulty_of
+from app.auth.user_repository import UserRepository
+from app.catalog.router import CatalogRepository
+from app.play.repository import PlayRepository
+from app.play.schemas import RunResult
+from app.projects.repository import ProjectRepository
+from app.settings.repository import DEFAULTS, SettingsRepository
+
+DATABASE_URL = os.environ.get("TEST_DATABASE_URL")
+
+pytestmark = pytest.mark.skipif(DATABASE_URL is None, reason="TEST_DATABASE_URL is not set")
+
+RUN = RunResult(outcome="won", score=50, coins_collected=2, coins_total=3, enemies_defeated=1,
+                damage_taken=0, deaths=0, duration_ms=1000,
+                events=[{"kind": "coin", "x": 1, "y": 2, "at_ms": 10}])
+
+
+@pytest.fixture
+def connection():
+    with psycopg.connect(DATABASE_URL, row_factory=dict_row, prepare_threshold=None) as conn:
+        yield conn
+        conn.rollback()
+
+
+@pytest.fixture
+def user(connection):
+    return UserRepository(connection).create("game-test", "game-test@example.com", b"\x01" * 16, b"\x02" * 64)
+
+
+@pytest.fixture
+def project(connection, user):
+    return ProjectRepository(connection).create(user.id, "level", [{"id": "a", "kind": "box", "x": 1, "y": 1}])
+
+
+def test_rename_and_delete_project(connection, user, project):
+    repo = ProjectRepository(connection)
+    assert repo.rename(project.id, user.id, "new name").name == "new name"
+    assert repo.rename(project.id, user.id + 999, "x") is None
+    assert repo.delete(project.id, user.id + 999) is False
+    assert repo.delete(project.id, user.id) is True
+    assert repo.find_by_id(project.id, user.id) is None
+
+
+def test_versions_are_numbered_per_project(connection, user, project):
+    repo = ProjectRepository(connection)
+    assert repo.save_version(project.id, user.id, [], "first") == 1
+    assert repo.save_version(project.id, user.id, project.scene) == 2
+    versions = repo.list_versions(project.id)
+    assert [v["version_number"] for v in versions] == [2, 1]
+    assert versions[0]["object_count"] == 1
+    assert repo.find_version(project.id, 1) == []
+    assert repo.find_version(project.id, 3) is None
+
+
+def test_templates_come_from_the_seed(connection):
+    repo = ProjectRepository(connection)
+    codes = [t["code"] for t in repo.list_templates()]
+    assert "village" in codes
+    assert len(repo.template_scene("village")) >= 5
+    assert repo.template_scene("missing") is None
+
+
+def test_a_full_run_updates_stats_and_scores(connection, user, project):
+    plays = PlayRepository(connection)
+    run_id = plays.start(project.id, user.id, 0.5)
+    assert plays.find_open(run_id, project.id, user.id)["difficulty"] == 0.5
+    plays.finish(run_id, RUN)
+    plays.add_to_player_stats(user.id, RUN)
+    plays.add_to_player_stats(user.id, RUN)
+    plays.add_high_score(project.id, user.id, 50)
+    plays.record_event_summary(run_id, {"learned": False})
+    assert plays.find_open(run_id, project.id, user.id) is None
+    stats = plays.stats_of(user.id)
+    assert (stats["games_played"], stats["games_won"], stats["total_score"]) == (2, 2, 100)
+    assert plays.leaderboard(project.id) == [{"username": "game-test", "score": 50}]
+    events = connection.execute(
+        "select kind from play_events where play_session_id = %s order by id", (run_id,)
+    ).fetchall()
+    assert [e["kind"] for e in events] == ["coin", "summary"]
+
+
+def test_ai_model_upsert_and_samples(connection, user, project):
+    models = AiModelRepository(connection)
+    assert models.get(project.id)["samples_seen"] == 0
+    model_id = models.save(project.id, {"difficulty": 0.6})
+    assert models.save(project.id, {"difficulty": 0.7}) == model_id
+    model = models.get(project.id)
+    assert (model["samples_seen"], model["version"]) == (2, 2)
+    assert difficulty_of(model) == 0.7
+    models.add_sample(model_id, None, {"score": 1}, 0.5)
+    request_id = models.record_request(project.id, user.id, "obstacles:2", "ok", "", 12)
+    models.record_generation(request_id, [{"id": "w", "kind": "wall", "x": 1, "y": 1}], 0.7)
+
+
+def test_settings_default_then_saved(connection, user):
+    repo = SettingsRepository(connection)
+    assert repo.get(user.id) == DEFAULTS
+    saved = repo.save(user.id, {**DEFAULTS, "theme": "light"})
+    assert saved["theme"] == "light"
+    assert repo.save(user.id, {**DEFAULTS, "grid_size": 16})["grid_size"] == 16
+    assert repo.get(user.id)["theme"] == "dark"
+
+
+def test_catalog_lists_seeded_kinds_with_physics(connection):
+    catalog = CatalogRepository(connection)
+    kinds = {row["code"]: row for row in catalog.kinds()}
+    assert {"box", "wall", "house", "coin", "enemy", "player"} <= set(kinds)
+    assert kinds["wall"]["body_type"] == "static"
+    assert kinds["box"]["movable"] is True
+    assert [e["code"] for e in catalog.enemies()][:1] == ["slime"]
+    assert any(t["code"] == "coin" for t in catalog.textures())
