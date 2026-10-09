@@ -1,6 +1,6 @@
 from fastapi.testclient import TestClient
 
-from app.auth.dependencies import get_auth_service
+from app.auth.dependencies import get_auth_service, get_commit
 from app.main import app
 from app.projects.router import get_repository
 from tests.fakes import AuthFixture
@@ -14,6 +14,7 @@ def make_client():
     service = AuthFixture().service
     projects = FakeProjectRepository()
     app.dependency_overrides[get_auth_service] = lambda: service
+    app.dependency_overrides[get_commit] = lambda: (lambda: None)
     app.dependency_overrides[get_repository] = lambda: projects
     return TestClient(app)
 
