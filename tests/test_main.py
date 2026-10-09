@@ -4,10 +4,10 @@ from app.database import database_connection
 from app.main import app
 
 
-def test_health_responde_ok():
-    respuesta = TestClient(app).get("/health")
-    assert respuesta.status_code == 200
-    assert respuesta.json() == {"ok": True}
+def test_health_answers_ok():
+    response = TestClient(app).get("/health")
+    assert response.status_code == 200
+    assert response.json() == {"ok": True}
 
 
 def test_every_response_has_security_headers():
