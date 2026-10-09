@@ -52,22 +52,6 @@ class FakeUserRepository:
         self.last_logins.append(user_id)
 
 
-class FakeSessionRepository:
-    """Legacy opaque-token sessions."""
-
-    def __init__(self):
-        self.sessions = {}
-
-    def create(self, session):
-        self.sessions[session.token_hash] = session
-
-    def find_by_token_hash(self, token_hash):
-        return self.sessions.get(token_hash)
-
-    def delete(self, token_hash):
-        self.sessions.pop(token_hash, None)
-
-
 class FakeRefreshTokenRepository:
 
     def __init__(self):
