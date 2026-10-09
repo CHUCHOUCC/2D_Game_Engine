@@ -1,4 +1,6 @@
+import logging
 import os
+from contextlib import asynccontextmanager
 
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI
@@ -6,27 +8,60 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.ai_learning.router import router as ai_router
 from app.auth.router import router as auth_router
+from app.body_limit import BodyLimitMiddleware
 from app.catalog.router import router as catalog_router
+from app.config import check_configuration, is_production
 from app.database import database_connection
 from app.play.router import router as play_router
 from app.profile.router import router as profile_router
 from app.projects.router import router as projects_router
+from app.rate_limit import RateLimitMiddleware, SlidingWindowLimiter
+from app.request_context import RequestContextMiddleware, unexpected_error_handler
 from app.security_headers import SecurityHeadersMiddleware
 from app.settings.router import router as settings_router
 
 load_dotenv()
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
 
-app = FastAPI(title="2D Engine", version="2.0.0")
 
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    # Refuses to start in production with weak secrets or insecure origins.
+    check_configuration()
+    yield
+
+
+app = FastAPI(
+    title="2D Engine",
+    version="2.1.0",
+    lifespan=lifespan,
+    # The interactive docs describe every route; do not publish them in production.
+    docs_url=None if is_production() else "/docs",
+    redoc_url=None,
+    openapi_url=None if is_production() else "/openapi.json",
+)
+app.add_exception_handler(Exception, unexpected_error_handler)
+
+# Middleware runs from the last added (outermost) to the first added.
 # Origins allowed to call this API from a browser (comma separated).
 _origins = os.environ.get("FRONTEND_ORIGINS", "http://localhost:5173")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[o.strip() for o in _origins.split(",") if o.strip()],
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=[o.strip() for o in _origins.split(",") if o.strip() and o.strip() != "*"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
+    allow_headers=["Authorization", "Content-Type", "X-Request-ID"],
+    expose_headers=["X-Request-ID", "Retry-After"],
+    max_age=600,
 )
 app.add_middleware(SecurityHeadersMiddleware)
+app.state.rate_limiter = SlidingWindowLimiter()
+app.add_middleware(
+    RateLimitMiddleware,
+    limiter=app.state.rate_limiter,
+    trusted_proxy_hops=int(os.environ.get("TRUSTED_PROXY_HOPS", "0")),
+)
+app.add_middleware(BodyLimitMiddleware)
+app.add_middleware(RequestContextMiddleware)
 
 app.include_router(auth_router)
 app.include_router(projects_router)
