@@ -51,6 +51,10 @@ class FakeUserRepository:
     def touch_last_login(self, user_id):
         self.last_logins.append(user_id)
 
+    def update_password(self, user_id, salt, password_hash):
+        old = self._users[user_id]
+        self._users[user_id] = User(old.id, old.username, old.email, salt, password_hash)
+
 
 class FakeRefreshTokenRepository:
 
