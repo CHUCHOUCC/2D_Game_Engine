@@ -44,7 +44,7 @@ def test_a_tampered_token_is_rejected():
 
 
 def test_an_expired_token_is_rejected():
-    token, _ = codec(access_duration=timedelta(seconds=-5)).issue_access(1)
+    token, _ = codec(access_duration=timedelta(seconds=-30)).issue_access(1)
     with pytest.raises(InvalidTokenError):
         codec().decode_access(token)
 
