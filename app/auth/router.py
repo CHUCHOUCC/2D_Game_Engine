@@ -1,9 +1,9 @@
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 
 from .auth_service import AuthService
 from .dependencies import bearer_token, current_user, get_auth_service
-from .errors import EmailAlreadyRegisteredError, InvalidCredentialsError
+from .errors import EmailAlreadyRegisteredError, InvalidCredentialsError, InvalidTokenError, TooManyAttemptsError
 from .user import User
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -12,7 +12,7 @@ _EMAIL_PATTERN = r"^[^@\s]+@[^@\s]+\.[^@\s]+$"
 
 
 class RegisterIn(BaseModel):
-    username: str = Field(min_length=1, max_length=50)
+    username: str = Field(min_length=1, max_length=50, pattern=r"\S")
     email: str = Field(pattern=_EMAIL_PATTERN, max_length=254)
     password: str = Field(min_length=8, max_length=128)
 
@@ -22,9 +22,21 @@ class LoginIn(BaseModel):
     password: str = Field(min_length=1, max_length=128)
 
 
+class RefreshIn(BaseModel):
+    refresh_token: str = Field(min_length=1, max_length=200)
+
+
+class LogoutIn(BaseModel):
+    refresh_token: str | None = Field(default=None, max_length=200)
+
+
 def _user_json(user: User) -> dict:
     # Never include the salt or the password hash.
     return {"id": user.id, "username": user.username, "email": user.email}
+
+
+def _client_ip(request: Request) -> str:
+    return request.client.host if request.client else ""
 
 
 @router.post("/register", status_code=201)
@@ -37,12 +49,23 @@ def register(body: RegisterIn, service: AuthService = Depends(get_auth_service))
 
 
 @router.post("/login")
-def log_in(body: LoginIn, service: AuthService = Depends(get_auth_service)):
+def log_in(body: LoginIn, request: Request, service: AuthService = Depends(get_auth_service)):
     try:
-        token = service.log_in(body.email, body.password)
+        pair = service.log_in(body.email, body.password, _client_ip(request), request.headers.get("user-agent", ""))
+    except TooManyAttemptsError:
+        raise HTTPException(status_code=429, detail="Too many failed attempts, try again later")
     except InvalidCredentialsError:
         raise HTTPException(status_code=401, detail="Invalid email or password")
-    return {"access_token": token, "token_type": "bearer"}
+    return pair.to_json()
+
+
+@router.post("/refresh")
+def refresh(body: RefreshIn, request: Request, service: AuthService = Depends(get_auth_service)):
+    try:
+        pair = service.refresh(body.refresh_token, request.headers.get("user-agent", ""))
+    except InvalidTokenError:
+        raise HTTPException(status_code=401, detail="Invalid refresh token")
+    return pair.to_json()
 
 
 @router.get("/me")
@@ -51,6 +74,13 @@ def me(user: User = Depends(current_user)):
 
 
 @router.post("/logout", status_code=204)
-def log_out(token: str = Depends(bearer_token), service: AuthService = Depends(get_auth_service)):
-    service.log_out(token)
+def log_out(body: LogoutIn | None = None, token: str = Depends(bearer_token),
+            service: AuthService = Depends(get_auth_service)):
+    service.log_out(token, body.refresh_token if body else None)
+    return Response(status_code=204)
+
+
+@router.post("/logout-all", status_code=204)
+def log_out_everywhere(user: User = Depends(current_user), service: AuthService = Depends(get_auth_service)):
+    service.log_out_everywhere(user.id)
     return Response(status_code=204)
