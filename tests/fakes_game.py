@@ -29,8 +29,9 @@ class FakePlayRepository:
         self.runs[play_id]["result"] = result
 
     def add_to_player_stats(self, user_id, result):
-        stats = self.stats.setdefault(user_id, {"games_played": 0, "best_score": 0})
+        stats = self.stats.setdefault(user_id, {"games_played": 0, "best_score": 0, "enemies_defeated": 0})
         stats["games_played"] += 1
+        stats["enemies_defeated"] += result.enemies_defeated
         stats["best_score"] = max(stats["best_score"], result.score)
 
     def add_high_score(self, project_id, user_id, score):
@@ -117,3 +118,20 @@ class FakeLearningAi:
     def generate(self, prompt, scene=None):
         self._maybe_fail()
         return []
+
+
+class FakeAchievementRepository:
+
+    def __init__(self):
+        self.owned = {}
+
+    def unlock(self, user_id, codes):
+        owned = self.owned.setdefault(user_id, [])
+        new = [code for code in codes if code not in owned]
+        owned.extend(new)
+        return new
+
+    def of_user(self, user_id):
+        from datetime import datetime, timezone
+        return [{"code": c, "name": c, "description": "", "points": 10,
+                 "unlocked_at": datetime.now(timezone.utc)} for c in self.owned.get(user_id, [])]
