@@ -1,35 +1,17 @@
 import os
-from typing import List
 
-from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, Field, ValidationError
+from fastapi import APIRouter, Depends, HTTPException, Response
+from pydantic import ValidationError
 
 from app.ai_client import AiServiceClient, AiServiceError
 from app.auth.dependencies import current_user
 from app.auth.user import User
 from app.database import database_connection
 from .repository import ProjectRepository
+from .schemas import AiRequest, GameObjectIn, ProjectCreate, ProjectRename, SceneUpdate
+from .world import MAX_OBJECTS
 
 router = APIRouter(prefix="/projects", tags=["projects"])
-
-
-class GameObjectIn(BaseModel):
-    id: str
-    kind: str
-    x: float
-    y: float
-
-
-class ProjectCreate(BaseModel):
-    name: str
-
-
-class SceneUpdate(BaseModel):
-    scene: List[GameObjectIn]
-
-
-class AiRequest(BaseModel):
-    prompt: str = Field(min_length=1, max_length=500)
 
 
 def get_repository(connection=Depends(database_connection)):
@@ -60,9 +42,31 @@ def _to_json(project):
     }
 
 
+def _not_found() -> HTTPException:
+    return HTTPException(status_code=404, detail="Project not found")
+
+
+def load_project(project_id: int, repo, owner_id: int):
+    project = repo.find_by_id(project_id, owner_id)
+    if project is None:
+        raise _not_found()
+    return project
+
+
+@router.get("/templates")
+def list_templates(repo=Depends(get_repository), owner_id: int = Depends(current_owner_id)):
+    """Starter scenes a new project can be created from."""
+    return [dict(row) for row in repo.list_templates()]
+
+
 @router.post("", status_code=201)
 def create_project(body: ProjectCreate, repo=Depends(get_repository), owner_id: int = Depends(current_owner_id)):
-    return _to_json(repo.create(owner_id, body.name, []))
+    scene = []
+    if body.template:
+        scene = repo.template_scene(body.template)
+        if scene is None:
+            raise HTTPException(status_code=422, detail="Unknown template")
+    return _to_json(repo.create(owner_id, body.name, scene))
 
 
 @router.get("")
@@ -72,22 +76,66 @@ def list_projects(repo=Depends(get_repository), owner_id: int = Depends(current_
 
 @router.get("/{project_id}")
 def get_project(project_id: int, repo=Depends(get_repository), owner_id: int = Depends(current_owner_id)):
-    project = repo.find_by_id(project_id, owner_id)
+    return _to_json(load_project(project_id, repo, owner_id))
+
+
+@router.patch("/{project_id}")
+def rename_project(project_id: int, body: ProjectRename, repo=Depends(get_repository),
+                   owner_id: int = Depends(current_owner_id)):
+    project = repo.rename(project_id, owner_id, body.name)
     if project is None:
-        raise HTTPException(status_code=404, detail="Project not found")
+        raise _not_found()
     return _to_json(project)
+
+
+@router.delete("/{project_id}", status_code=204)
+def delete_project(project_id: int, repo=Depends(get_repository), owner_id: int = Depends(current_owner_id)):
+    if not repo.delete(project_id, owner_id):
+        raise _not_found()
+    return Response(status_code=204)
+
+
+@router.post("/{project_id}/duplicate", status_code=201)
+def duplicate_project(project_id: int, repo=Depends(get_repository), owner_id: int = Depends(current_owner_id)):
+    """Clone a project: same scene, name with ' (copia)' appended."""
+    original = load_project(project_id, repo, owner_id)
+    name = f"{original.name} (copia)"[:100]
+    return _to_json(repo.create(owner_id, name, list(original.scene)))
 
 
 @router.put("/{project_id}/scene")
-def save_scene(project_id: int, body: SceneUpdate, repo=Depends(get_repository), owner_id: int = Depends(current_owner_id)):
+def save_scene(project_id: int, body: SceneUpdate, repo=Depends(get_repository),
+               owner_id: int = Depends(current_owner_id)):
     scene = [obj.model_dump() for obj in body.scene]
     project = repo.update_scene(project_id, owner_id, scene)
     if project is None:
-        raise HTTPException(status_code=404, detail="Project not found")
+        raise _not_found()
+    repo.save_version(project_id, owner_id, scene, body.note)
     return _to_json(project)
 
 
-def _with_unique_ids(existing: list, new: list) -> list:
+@router.get("/{project_id}/versions")
+def list_versions(project_id: int, repo=Depends(get_repository), owner_id: int = Depends(current_owner_id)):
+    load_project(project_id, repo, owner_id)
+    return [
+        {**row, "created_at": row["created_at"].isoformat()}
+        for row in (dict(r) for r in repo.list_versions(project_id))
+    ]
+
+
+@router.post("/{project_id}/versions/{version_number}/restore")
+def restore_version(project_id: int, version_number: int, repo=Depends(get_repository),
+                    owner_id: int = Depends(current_owner_id)):
+    load_project(project_id, repo, owner_id)
+    scene = repo.find_version(project_id, version_number)
+    if scene is None:
+        raise HTTPException(status_code=404, detail="Version not found")
+    project = repo.update_scene(project_id, owner_id, scene)
+    repo.save_version(project_id, owner_id, scene, f"Restaurada la version {version_number}")
+    return _to_json(project)
+
+
+def with_unique_ids(existing: list, new: list) -> list:
     """Give each new object an id that is not used yet in the scene."""
     used = {obj["id"] for obj in existing}
     result = []
@@ -101,6 +149,25 @@ def _with_unique_ids(existing: list, new: list) -> list:
     return result
 
 
+def validate_generated(objects: list) -> list:
+    """Check again whatever the AI service returned; it is never trusted blindly.
+
+    The AI may not add a second player: extra 'player' objects are dropped.
+    """
+    try:
+        validated = [GameObjectIn(**obj).model_dump() for obj in objects]
+    except (ValidationError, TypeError):
+        raise HTTPException(status_code=502, detail="AI service returned invalid objects")
+    return [obj for obj in validated if obj["kind"] != "player"]
+
+
+def append_objects(project, new_objects: list) -> list:
+    scene = list(project.scene) + with_unique_ids(project.scene, new_objects)
+    if len(scene) > MAX_OBJECTS:
+        raise HTTPException(status_code=422, detail=f"A scene can have at most {MAX_OBJECTS} objects")
+    return scene
+
+
 @router.post("/{project_id}/ai")
 def add_objects_with_ai(
     project_id: int,
@@ -109,19 +176,11 @@ def add_objects_with_ai(
     owner_id: int = Depends(current_owner_id),
     ai_client: AiServiceClient = Depends(get_ai_client),
 ):
-    """Ask the AI service for new objects and add them to the project's scene.
-
-    The backend validates the AI service's answer again before saving it.
-    """
-    project = repo.find_by_id(project_id, owner_id)
-    if project is None:
-        raise HTTPException(status_code=404, detail="Project not found")
+    """Ask the AI service for new objects and add them to the project's scene."""
+    project = load_project(project_id, repo, owner_id)
     try:
-        generated = ai_client.generate(body.prompt)
-        validated = [GameObjectIn(**obj).model_dump() for obj in generated]
+        generated = ai_client.generate(body.prompt, list(project.scene))
     except AiServiceError as error:
         raise HTTPException(status_code=502, detail=str(error))
-    except (ValidationError, TypeError):
-        raise HTTPException(status_code=502, detail="AI service returned invalid objects")
-    scene = list(project.scene) + _with_unique_ids(project.scene, validated)
+    scene = append_objects(project, validate_generated(generated))
     return _to_json(repo.update_scene(project_id, owner_id, scene))
