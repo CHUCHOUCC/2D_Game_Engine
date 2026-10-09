@@ -50,7 +50,7 @@ def test_register_rejects_a_duplicate_email_even_with_other_case():
     fixture = AuthFixture()
     registered(fixture)
     with pytest.raises(EmailAlreadyRegisteredError):
-        fixture.service.register("other", "JESUS@example.com", "another password")
+        fixture.service.register("other", "JESUS@example.com", "different words")
 
 
 def test_register_grants_the_creator_role():
@@ -144,7 +144,7 @@ def test_user_from_token_rejects_garbage_and_refresh_tokens():
 
 
 def test_an_expired_access_token_is_rejected():
-    fixture = AuthFixture(jwt_options={"access_duration": timedelta(seconds=-1)})
+    fixture = AuthFixture(jwt_options={"access_duration": timedelta(seconds=-30)})
     pair = logged_in(fixture)
     with pytest.raises(InvalidTokenError):
         fixture.service.user_from_token(pair.access_token)
