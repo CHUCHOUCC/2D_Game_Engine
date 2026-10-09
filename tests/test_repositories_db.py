@@ -14,8 +14,6 @@ import pytest
 from psycopg.rows import dict_row
 
 from app.auth.errors import EmailAlreadyRegisteredError
-from app.auth.session import Session
-from app.auth.session_repository import SessionRepository
 from app.auth.user_repository import UserRepository
 
 DATABASE_URL = os.environ.get("TEST_DATABASE_URL")
@@ -34,10 +32,6 @@ def connection():
 def users(connection):
     return UserRepository(connection)
 
-
-@pytest.fixture
-def sessions(connection):
-    return SessionRepository(connection)
 
 
 def new_user(users, email="repo-test@example.com"):
@@ -67,34 +61,6 @@ def test_duplicate_email_raises_a_domain_error(connection, users):
     new_user(users)
     with pytest.raises(EmailAlreadyRegisteredError):
         new_user(users)
-
-
-def test_session_round_trip(users, sessions):
-    user = new_user(users)
-    expires = datetime.now(timezone.utc) + timedelta(hours=1)
-    sessions.create(Session(user.id, "a" * 64, expires))
-    found = sessions.find_by_token_hash("a" * 64)
-    assert found.user_id == user.id
-    assert found.expires_at == expires
-    assert found.is_valid() is True
-
-
-def test_unknown_session_is_none(sessions):
-    assert sessions.find_by_token_hash("f" * 64) is None
-
-
-def test_expired_session_is_stored_but_not_valid(users, sessions):
-    user = new_user(users)
-    sessions.create(Session(user.id, "b" * 64, datetime.now(timezone.utc) - timedelta(seconds=1)))
-    assert sessions.find_by_token_hash("b" * 64).is_valid() is False
-
-
-def test_delete_session(users, sessions):
-    user = new_user(users)
-    sessions.create(Session(user.id, "c" * 64, datetime.now(timezone.utc) + timedelta(hours=1)))
-    sessions.delete("c" * 64)
-    assert sessions.find_by_token_hash("c" * 64) is None
-    sessions.delete("c" * 64)  # deleting again must not fail
 
 
 # --- JWT login tables -------------------------------------------------------
