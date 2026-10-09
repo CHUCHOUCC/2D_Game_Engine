@@ -7,6 +7,7 @@ from app.auth.dependencies import current_user
 from app.auth.user import User
 from app.database import database_connection
 from app.projects.router import get_repository, load_project
+from .achievements import AchievementRepository, earned_codes
 from .repository import PlayRepository
 from .schemas import RunResult
 
@@ -15,6 +16,10 @@ router = APIRouter(tags=["play"])
 
 def get_plays(connection=Depends(database_connection)) -> PlayRepository:
     return PlayRepository(connection)
+
+
+def get_achievements(connection=Depends(database_connection)) -> AchievementRepository:
+    return AchievementRepository(connection)
 
 
 @router.post("/projects/{project_id}/plays", status_code=201)
@@ -36,6 +41,7 @@ def finish_run(
     models: AiModelRepository = Depends(get_ai_models),
     user: User = Depends(current_user),
     ai_client: AiServiceClient | None = Depends(get_optional_ai_client),
+    achievements: AchievementRepository = Depends(get_achievements),
 ):
     """Save the run, update the player's totals and let the AI learn from it."""
     load_project(project_id, repo, user.id)
@@ -44,6 +50,7 @@ def finish_run(
     plays.finish(play_id, body)
     plays.add_to_player_stats(user.id, body)
     plays.add_high_score(project_id, user.id, body.score)
+    unlocked = achievements.unlock(user.id, earned_codes(body, plays.stats_of(user.id)))
 
     model = models.get(project_id)
     learning = {"learned": False, "difficulty": difficulty_of(model)}
@@ -62,7 +69,7 @@ def finish_run(
                 "difficulty": float(reply.get("difficulty", difficulty_of({"parameters": reply["model"]}))),
             }
     plays.record_event_summary(play_id, learning)
-    return learning
+    return {**learning, "achievements": unlocked}
 
 
 @router.get("/projects/{project_id}/leaderboard")
@@ -79,3 +86,9 @@ def my_stats(plays: PlayRepository = Depends(get_plays), user: User = Depends(cu
         return {"games_played": 0, "games_won": 0, "total_score": 0, "best_score": 0,
                 "coins_collected": 0, "enemies_defeated": 0, "deaths": 0, "play_time_ms": 0}
     return dict(row)
+
+
+@router.get("/me/achievements")
+def my_achievements(achievements: AchievementRepository = Depends(get_achievements),
+                    user: User = Depends(current_user)):
+    return [{**row, "unlocked_at": row["unlocked_at"].isoformat()} for row in map(dict, achievements.of_user(user.id))]
