@@ -120,3 +120,29 @@ def test_catalog_lists_seeded_kinds_with_physics(connection):
     assert kinds["box"]["movable"] is True
     assert [e["code"] for e in catalog.enemies()][:1] == ["slime"]
     assert any(t["code"] == "coin" for t in catalog.textures())
+
+
+def test_achievements_are_unlocked_only_once(connection, user):
+    from app.play.achievements import AchievementRepository
+
+    repo = AchievementRepository(connection)
+    assert repo.unlock(user.id, []) == []
+    assert repo.unlock(user.id, ["first-coin", "first-win", "not-real"]) == ["first-coin", "first-win"]
+    assert repo.unlock(user.id, ["first-coin"]) == []
+    assert [a["code"] for a in repo.of_user(user.id)] == ["first-coin", "first-win"]
+
+
+def test_profile_repository_round_trip(connection, user):
+    from app.profile.router import ProfileRepository
+
+    repo = ProfileRepository(connection)
+    assert repo.get(user.id)["bio"] == ""
+    repo.save(user.id, {"display_name": "Chucho", "avatar_url": "", "bio": "hola", "country": "CO"})
+    assert repo.get(user.id)["display_name"] == "Chucho"
+
+
+def test_maintenance_purge_runs_on_the_real_schema(connection):
+    from app.maintenance import purge
+
+    counts = purge(connection)
+    assert set(counts) == {"revoked_access_tokens", "refresh_tokens", "login_attempts", "sessions"}
