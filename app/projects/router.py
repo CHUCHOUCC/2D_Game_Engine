@@ -32,7 +32,7 @@ def current_owner_id(user: User = Depends(current_user)) -> int:
     return user.id
 
 
-def _to_json(project):
+def project_json(project):
     return {
         "id": project.id,
         "owner_id": project.owner_id,
@@ -66,17 +66,17 @@ def create_project(body: ProjectCreate, repo=Depends(get_repository), owner_id: 
         scene = repo.template_scene(body.template)
         if scene is None:
             raise HTTPException(status_code=422, detail="Unknown template")
-    return _to_json(repo.create(owner_id, body.name, scene))
+    return project_json(repo.create(owner_id, body.name, scene))
 
 
 @router.get("")
 def list_projects(repo=Depends(get_repository), owner_id: int = Depends(current_owner_id)):
-    return [_to_json(p) for p in repo.list_by_owner(owner_id)]
+    return [project_json(p) for p in repo.list_by_owner(owner_id)]
 
 
 @router.get("/{project_id}")
 def get_project(project_id: int, repo=Depends(get_repository), owner_id: int = Depends(current_owner_id)):
-    return _to_json(load_project(project_id, repo, owner_id))
+    return project_json(load_project(project_id, repo, owner_id))
 
 
 @router.patch("/{project_id}")
@@ -85,7 +85,7 @@ def rename_project(project_id: int, body: ProjectRename, repo=Depends(get_reposi
     project = repo.rename(project_id, owner_id, body.name)
     if project is None:
         raise _not_found()
-    return _to_json(project)
+    return project_json(project)
 
 
 @router.delete("/{project_id}", status_code=204)
@@ -100,7 +100,7 @@ def duplicate_project(project_id: int, repo=Depends(get_repository), owner_id: i
     """Clone a project: same scene, name with ' (copia)' appended."""
     original = load_project(project_id, repo, owner_id)
     name = f"{original.name} (copia)"[:100]
-    return _to_json(repo.create(owner_id, name, list(original.scene)))
+    return project_json(repo.create(owner_id, name, list(original.scene)))
 
 
 @router.put("/{project_id}/scene")
@@ -111,7 +111,7 @@ def save_scene(project_id: int, body: SceneUpdate, repo=Depends(get_repository),
     if project is None:
         raise _not_found()
     repo.save_version(project_id, owner_id, scene, body.note)
-    return _to_json(project)
+    return project_json(project)
 
 
 @router.get("/{project_id}/versions")
@@ -132,7 +132,7 @@ def restore_version(project_id: int, version_number: int, repo=Depends(get_repos
         raise HTTPException(status_code=404, detail="Version not found")
     project = repo.update_scene(project_id, owner_id, scene)
     repo.save_version(project_id, owner_id, scene, f"Restaurada la version {version_number}")
-    return _to_json(project)
+    return project_json(project)
 
 
 def with_unique_ids(existing: list, new: list) -> list:
@@ -183,4 +183,4 @@ def add_objects_with_ai(
     except AiServiceError as error:
         raise HTTPException(status_code=502, detail=str(error))
     scene = append_objects(project, validate_generated(generated))
-    return _to_json(repo.update_scene(project_id, owner_id, scene))
+    return project_json(repo.update_scene(project_id, owner_id, scene))
