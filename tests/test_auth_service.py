@@ -2,134 +2,214 @@ from datetime import timedelta
 
 import pytest
 
-from app.auth.auth_service import AuthService
 from app.auth.errors import (
     EmailAlreadyRegisteredError,
     InvalidCredentialsError,
     InvalidTokenError,
+    TooManyAttemptsError,
 )
-from app.auth.password_hasher import PasswordHasher
 from app.auth.token_generator import TokenGenerator
-from tests.fakes import FakeSessionRepository, FakeUserRepository
+from tests.fakes import AuthFixture
+
+PASSWORD = "correct horse"
 
 
-def make_service(session_duration=None):
-    users = FakeUserRepository()
-    sessions = FakeSessionRepository()
-    if session_duration is None:
-        service = AuthService(users, sessions, PasswordHasher(), TokenGenerator())
-    else:
-        service = AuthService(users, sessions, PasswordHasher(), TokenGenerator(), session_duration)
-    return service, users, sessions
+def registered(fixture):
+    return fixture.service.register("jesus", "jesus@example.com", PASSWORD)
 
 
-def registered(service):
-    return service.register("jesus", "jesus@example.com", "correct horse")
+def logged_in(fixture):
+    registered(fixture)
+    return fixture.service.log_in("jesus@example.com", PASSWORD)
 
 
 def test_register_returns_a_user_with_an_id():
-    service, _, _ = make_service()
-    user = registered(service)
+    user = registered(AuthFixture())
     assert user.id is not None
     assert user.username == "jesus"
     assert user.email == "jesus@example.com"
 
 
 def test_register_never_stores_the_plain_password():
-    service, users, _ = make_service()
-    registered(service)
-    stored = users.find_by_email("jesus@example.com")
-    assert stored.password_hash != b"correct horse"
+    fixture = AuthFixture()
+    registered(fixture)
+    stored = fixture.users.find_by_email("jesus@example.com")
+    assert stored.password_hash != PASSWORD.encode()
     assert len(stored.salt) == 16
 
 
-def test_register_normalizes_the_email():
-    service, users, _ = make_service()
-    service.register("jesus", "  Jesus@Example.COM ", "correct horse")
-    assert users.find_by_email("jesus@example.com") is not None
+def test_register_normalizes_the_email_and_trims_the_username():
+    fixture = AuthFixture()
+    fixture.service.register("  jesus ", "  Jesus@Example.COM ", PASSWORD)
+    user = fixture.users.find_by_email("jesus@example.com")
+    assert user is not None
+    assert user.username == "jesus"
 
 
 def test_register_rejects_a_duplicate_email_even_with_other_case():
-    service, _, _ = make_service()
-    registered(service)
+    fixture = AuthFixture()
+    registered(fixture)
     with pytest.raises(EmailAlreadyRegisteredError):
-        service.register("other", "JESUS@example.com", "another password")
+        fixture.service.register("other", "JESUS@example.com", "another password")
 
 
-def test_log_in_returns_a_token():
-    service, _, _ = make_service()
-    registered(service)
-    token = service.log_in("jesus@example.com", "correct horse")
-    assert isinstance(token, str)
-    assert len(token) >= 40
+def test_register_grants_the_creator_role():
+    fixture = AuthFixture()
+    user = registered(fixture)
+    assert fixture.users.roles_of(user.id) == ("creator",)
+
+
+def test_log_in_returns_an_access_and_a_refresh_token():
+    pair = logged_in(AuthFixture())
+    assert pair.access_token.count(".") == 2  # header.payload.signature
+    assert len(pair.refresh_token) >= 40
+    assert pair.expires_in == 15 * 60
+
+
+def test_access_token_carries_the_user_and_roles():
+    fixture = AuthFixture()
+    pair = logged_in(fixture)
+    claims = fixture.jwt.decode_access(pair.access_token)
+    assert claims.user_id == 1
+    assert claims.roles == ("creator",)
 
 
 def test_log_in_accepts_the_email_in_any_case():
-    service, _, _ = make_service()
-    registered(service)
-    assert service.log_in(" JESUS@example.com", "correct horse")
+    fixture = AuthFixture()
+    registered(fixture)
+    assert fixture.service.log_in(" JESUS@example.com", PASSWORD)
 
 
-def test_log_in_stores_only_the_hash_of_the_token():
-    service, _, sessions = make_service()
-    registered(service)
-    token = service.log_in("jesus@example.com", "correct horse")
-    assert token not in sessions.sessions
-    assert TokenGenerator().hash(token) in sessions.sessions
+def test_log_in_stores_only_the_hash_of_the_refresh_token():
+    fixture = AuthFixture()
+    pair = logged_in(fixture)
+    stored = list(fixture.refresh_tokens.tokens.values())
+    assert [t.token_hash for t in stored] == [TokenGenerator().hash(pair.refresh_token)]
 
 
 def test_log_in_with_a_wrong_password_fails():
-    service, _, _ = make_service()
-    registered(service)
+    fixture = AuthFixture()
+    registered(fixture)
     with pytest.raises(InvalidCredentialsError):
-        service.log_in("jesus@example.com", "wrong password")
+        fixture.service.log_in("jesus@example.com", "wrong password")
 
 
 def test_log_in_with_an_unknown_email_fails_with_the_same_error():
-    service, _, _ = make_service()
     with pytest.raises(InvalidCredentialsError):
-        service.log_in("nobody@example.com", "whatever")
+        AuthFixture().service.log_in("nobody@example.com", "whatever")
 
 
-def test_every_log_in_creates_a_different_token():
-    service, _, _ = make_service()
-    registered(service)
-    first = service.log_in("jesus@example.com", "correct horse")
-    second = service.log_in("jesus@example.com", "correct horse")
-    assert first != second
+def test_every_log_in_creates_different_tokens():
+    fixture = AuthFixture()
+    registered(fixture)
+    first = fixture.service.log_in("jesus@example.com", PASSWORD)
+    second = fixture.service.log_in("jesus@example.com", PASSWORD)
+    assert first.access_token != second.access_token
+    assert first.refresh_token != second.refresh_token
+
+
+def test_failed_and_successful_logins_are_recorded():
+    fixture = AuthFixture()
+    registered(fixture)
+    with pytest.raises(InvalidCredentialsError):
+        fixture.service.log_in("jesus@example.com", "nope", ip_address="1.2.3.4")
+    fixture.service.log_in("jesus@example.com", PASSWORD)
+    assert [(a[1], a[2]) for a in fixture.attempts.attempts] == [("1.2.3.4", False), ("", True)]
+    assert fixture.users.last_logins == [1]
+
+
+def test_too_many_failures_lock_the_account_even_with_the_right_password():
+    fixture = AuthFixture()
+    registered(fixture)
+    for _ in range(5):
+        with pytest.raises(InvalidCredentialsError):
+            fixture.service.log_in("jesus@example.com", "wrong password")
+    with pytest.raises(TooManyAttemptsError):
+        fixture.service.log_in("jesus@example.com", PASSWORD)
 
 
 def test_user_from_token_returns_the_owner():
-    service, _, _ = make_service()
-    user = registered(service)
-    token = service.log_in("jesus@example.com", "correct horse")
-    assert service.user_from_token(token).id == user.id
+    fixture = AuthFixture()
+    pair = logged_in(fixture)
+    assert fixture.service.user_from_token(pair.access_token).id == 1
 
 
-def test_user_from_token_rejects_an_unknown_token():
-    service, _, _ = make_service()
+def test_user_from_token_rejects_garbage_and_refresh_tokens():
+    fixture = AuthFixture()
+    pair = logged_in(fixture)
     with pytest.raises(InvalidTokenError):
-        service.user_from_token("not-a-real-token")
-
-
-def test_an_expired_token_is_rejected_and_its_session_removed():
-    service, _, sessions = make_service(session_duration=timedelta(seconds=-1))
-    registered(service)
-    token = service.log_in("jesus@example.com", "correct horse")
+        fixture.service.user_from_token("not-a-real-token")
     with pytest.raises(InvalidTokenError):
-        service.user_from_token(token)
-    assert sessions.sessions == {}
+        fixture.service.user_from_token(pair.refresh_token)
 
 
-def test_log_out_makes_the_token_useless():
-    service, _, _ = make_service()
-    registered(service)
-    token = service.log_in("jesus@example.com", "correct horse")
-    service.log_out(token)
+def test_an_expired_access_token_is_rejected():
+    fixture = AuthFixture(jwt_options={"access_duration": timedelta(seconds=-1)})
+    pair = logged_in(fixture)
     with pytest.raises(InvalidTokenError):
-        service.user_from_token(token)
+        fixture.service.user_from_token(pair.access_token)
 
 
-def test_log_out_with_an_unknown_token_does_not_fail():
-    service, _, _ = make_service()
-    service.log_out("not-a-real-token")
+def test_refresh_rotates_the_refresh_token():
+    fixture = AuthFixture()
+    first = logged_in(fixture)
+    second = fixture.service.refresh(first.refresh_token)
+    assert second.refresh_token != first.refresh_token
+    assert fixture.service.user_from_token(second.access_token).id == 1
+
+
+def test_reusing_a_rotated_refresh_token_revokes_the_whole_family():
+    fixture = AuthFixture()
+    first = logged_in(fixture)
+    second = fixture.service.refresh(first.refresh_token)
+    with pytest.raises(InvalidTokenError):
+        fixture.service.refresh(first.refresh_token)
+    with pytest.raises(InvalidTokenError):
+        fixture.service.refresh(second.refresh_token)
+    assert (1, "token.reuse_detected") in fixture.audit.entries
+
+
+def test_an_expired_refresh_token_is_rejected():
+    fixture = AuthFixture(refresh_duration=timedelta(seconds=-1))
+    pair = logged_in(fixture)
+    with pytest.raises(InvalidTokenError):
+        fixture.service.refresh(pair.refresh_token)
+
+
+def test_unknown_refresh_token_is_rejected():
+    with pytest.raises(InvalidTokenError):
+        AuthFixture().service.refresh("made-up")
+
+
+def test_log_out_makes_both_tokens_useless():
+    fixture = AuthFixture()
+    pair = logged_in(fixture)
+    fixture.service.log_out(pair.access_token, pair.refresh_token)
+    with pytest.raises(InvalidTokenError):
+        fixture.service.user_from_token(pair.access_token)
+    with pytest.raises(InvalidTokenError):
+        fixture.service.refresh(pair.refresh_token)
+
+
+def test_log_out_with_unknown_tokens_does_not_fail():
+    AuthFixture().service.log_out("not-a-real-token", "nor-this")
+
+
+def test_log_out_cannot_revoke_another_users_refresh_token():
+    fixture = AuthFixture()
+    alice = logged_in(fixture)
+    fixture.service.register("bob", "bob@example.com", PASSWORD)
+    bob = fixture.service.log_in("bob@example.com", PASSWORD)
+    fixture.service.log_out(bob.access_token, alice.refresh_token)
+    assert fixture.service.refresh(alice.refresh_token)
+
+
+def test_log_out_everywhere_revokes_every_refresh_token():
+    fixture = AuthFixture()
+    registered(fixture)
+    one = fixture.service.log_in("jesus@example.com", PASSWORD)
+    two = fixture.service.log_in("jesus@example.com", PASSWORD)
+    fixture.service.log_out_everywhere(1)
+    for pair in (one, two):
+        with pytest.raises(InvalidTokenError):
+            fixture.service.refresh(pair.refresh_token)
