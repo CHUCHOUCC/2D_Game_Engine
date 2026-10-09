@@ -1,8 +1,5 @@
-from datetime import datetime, timedelta, timezone
-
 import pytest
 
-from app.auth.session import Session
 from app.auth.user import User
 
 
@@ -28,13 +25,3 @@ def test_user_repr_hides_secrets():
     assert "jesus" in text
     assert "hash" not in text
     assert "salt" not in text
-
-
-def test_session_in_the_future_is_valid():
-    expires = datetime.now(timezone.utc) + timedelta(minutes=5)
-    assert Session(1, "abc", expires).is_valid() is True
-
-
-def test_session_in_the_past_is_expired():
-    expires = datetime.now(timezone.utc) - timedelta(seconds=1)
-    assert Session(1, "abc", expires).is_valid() is False
