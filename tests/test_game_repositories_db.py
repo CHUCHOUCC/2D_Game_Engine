@@ -146,3 +146,15 @@ def test_maintenance_purge_runs_on_the_real_schema(connection):
 
     counts = purge(connection)
     assert set(counts) == {"revoked_access_tokens", "refresh_tokens", "login_attempts", "sessions"}
+
+
+def test_characters_are_seeded_with_physics_textures_and_lines(connection):
+    catalog = CatalogRepository(connection)
+    kinds = {row["code"]: row for row in catalog.kinds()}
+    for code in ("villager", "knight", "wizard"):
+        assert kinds[code]["category"] == "character"
+        assert kinds[code]["body_type"] == "dynamic"
+        assert kinds[code]["hostile"] is False
+    assert {t["code"] for t in catalog.textures()} >= {"villager", "knight", "wizard"}
+    said = {row["kind"] for row in catalog.character_lines()}
+    assert said == {"villager", "knight", "wizard"}
