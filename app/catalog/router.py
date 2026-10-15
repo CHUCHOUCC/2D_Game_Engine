@@ -25,6 +25,11 @@ class CatalogRepository:
             "select code, name, health, speed, damage, behavior, texture_code from enemy_types order by id"
         ).fetchall()
 
+    def character_lines(self) -> list:
+        return self._connection.execute(
+            "select kind, line from character_lines order by kind, id"
+        ).fetchall()
+
     def textures(self) -> list:
         return self._connection.execute(
             "select t.code, t.kind, t.file_path, t.width, t.height, t.frames, p.code as pack "
@@ -44,6 +49,15 @@ def list_kinds(catalog: CatalogRepository = Depends(get_catalog)):
 @router.get("/enemies")
 def list_enemies(catalog: CatalogRepository = Depends(get_catalog)):
     return [dict(row) for row in catalog.enemies()]
+
+
+@router.get("/characters")
+def list_character_lines(catalog: CatalogRepository = Depends(get_catalog)):
+    """What each 2D character can say, grouped by kind."""
+    lines: dict = {}
+    for row in catalog.character_lines():
+        lines.setdefault(row["kind"], []).append(row["line"])
+    return lines
 
 
 @router.get("/textures")
