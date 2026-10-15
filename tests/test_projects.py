@@ -180,7 +180,7 @@ def test_unknown_kinds_and_out_of_world_positions_are_rejected():
 def test_every_new_kind_is_accepted():
     client, _ = make_client()
     project_id = new_project(client)
-    kinds = ["player", "box", "wall", "house", "tree", "spike", "coin", "enemy"]
+    kinds = ["player", "box", "wall", "house", "tree", "spike", "coin", "enemy", "villager", "knight", "wizard"]
     scene = [{"id": k, "kind": k, "x": 32, "y": 32} for k in kinds]
     assert client.put(f"/projects/{project_id}/scene", json={"scene": scene}).status_code == 200
 
