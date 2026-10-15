@@ -80,8 +80,11 @@ another user's project answers 404.
 | `POST /projects/{id}/plays`, `POST .../plays/{run}/finish` | Start and finish a run; the AI learns from it |
 | `GET /projects/{id}/leaderboard` | Best scores of the level |
 | `GET /catalog/kinds`, `/catalog/enemies`, `/catalog/textures` | Object kinds with physics, enemies, texture pack |
+| `GET /catalog/characters` | What each 2D character says |
 
-Object kinds: `player` (one per scene), `box`, `wall`, `house`, `tree`, `spike`, `coin`, `enemy`.
+Object kinds: `player` (one per scene), `box`, `wall`, `house`, `tree`, `spike`, `coin`, `enemy`, and the
+2D characters `villager`, `knight` and `wizard` (friendly, they walk around and talk; their lines come
+from the `character_lines` table through `GET /catalog/characters`).
 The world is 1600 × 960 pixels; objects outside it are rejected, also when they come from the AI.
 
 ## How the AI learns
