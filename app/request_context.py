@@ -1,12 +1,10 @@
 """A request id on every request and response, an access log line without
 secrets, and a generic 500 answer that never leaks internal details."""
+import json
 import logging
 import re
 import time
 import uuid
-
-from fastapi import Request
-from fastapi.responses import JSONResponse
 
 logger = logging.getLogger("app.access")
 
@@ -38,12 +36,20 @@ class RequestContextMiddleware:
 
         async def send_with_id(message):
             if message["type"] == "http.response.start":
+                status["started"] = True
                 status["code"] = message["status"]
                 message.setdefault("headers", []).append((b"x-request-id", rid.encode()))
             await send(message)
 
         try:
             await self.app(scope, receive, send_with_id)
+        except Exception as error:
+            # Answered here (inside CORS) instead of by Starlette's outermost error
+            # middleware, so the browser can read the 500 and its request id.
+            logger.exception("Unhandled error rid=%s", rid, exc_info=error)
+            if status.get("started"):
+                raise
+            await _internal_error(send_with_id, rid)
         finally:
             # Path only: query strings may carry data we do not want in logs.
             logger.info(
@@ -52,12 +58,12 @@ class RequestContextMiddleware:
             )
 
 
-async def unexpected_error_handler(request: Request, error: Exception) -> JSONResponse:
-    """Log the real error with its request id; tell the client nothing internal."""
-    rid = request.scope.get("state", {}).get("request_id", "")
-    logger.exception("Unhandled error rid=%s", rid, exc_info=error)
-    return JSONResponse(
-        status_code=500,
-        content={"detail": "Internal server error", "request_id": rid},
-        headers={"X-Request-ID": rid},
-    )
+async def _internal_error(send, rid: str) -> None:
+    """Tell the client nothing internal: only that it failed and the id to report."""
+    body = json.dumps({"detail": "Internal server error", "request_id": rid}).encode()
+    await send({
+        "type": "http.response.start",
+        "status": 500,
+        "headers": [(b"content-type", b"application/json"), (b"content-length", str(len(body)).encode())],
+    })
+    await send({"type": "http.response.body", "body": body})
