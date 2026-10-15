@@ -220,3 +220,23 @@ def test_access_tokens_carry_and_require_the_api_audience():
     other = jwt.encode({**claims, "aud": "ai-service"}, TEST_JWT_SECRET, algorithm="HS256")
     with pytest.raises(Exception):
         JwtCodec(TEST_JWT_SECRET).decode_access(other)
+
+
+def test_errors_and_limits_keep_cors_headers_so_the_browser_can_read_them():
+    origin = {"Origin": "http://localhost:5173"}
+    boom = APIRouter()
+
+    @boom.get("/__boom_cors")
+    def explode():
+        raise RuntimeError("secret detail")
+
+    app.include_router(boom)
+    try:
+        failed = TestClient(app, raise_server_exceptions=False).get("/__boom_cors", headers=origin)
+    finally:
+        app.router.routes = [r for r in app.router.routes if getattr(r, "path", "") != "/__boom_cors"]
+    too_big = TestClient(app).post("/auth/login", content="x" * (MAX_BODY_BYTES + 1),
+                                   headers={**origin, "Content-Type": "application/json"})
+    for response in (failed, too_big):
+        assert response.headers["access-control-allow-origin"] == "http://localhost:5173"
+    assert failed.status_code == 500 and "secret" not in failed.text
