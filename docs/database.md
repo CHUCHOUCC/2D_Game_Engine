@@ -4,7 +4,7 @@ PostgreSQL (Supabase in production). The schema lives in `migrations/` as number
 `python -m app.migrate` runs the ones the database has not seen yet and records them in
 `schema_migrations`. Every file is idempotent (`if not exists`, `on conflict do nothing`).
 
-**53 tables** in total (52 from the migrations + `schema_migrations`).
+**54 tables** in total (53 from the migrations + `schema_migrations`).
 
 ## Accounts and security (17)
 
@@ -38,7 +38,7 @@ PostgreSQL (Supabase in production). The schema lives in `migrations/` as number
 | `level_templates` | Starter scenes (empty, village) |
 | `notifications` | Messages for a user |
 
-## Game content and physics (9)
+## Game content and physics (10)
 
 | Table | What it holds |
 |---|---|
@@ -47,6 +47,7 @@ PostgreSQL (Supabase in production). The schema lives in `migrations/` as number
 | `object_physics` | Arcade Physics body of each kind (static/dynamic, mass, drag) |
 | `enemy_types` | Slime, skeleton, bat: health, speed, damage, behaviour |
 | `texture_packs`, `textures`, `sprite_animations`, `tilesets`, `tiles` | The pixel-art pack |
+| `character_lines` | What the 2D characters (villager, knight, wizard) say |
 
 ## Play and AI learning (14)
 
