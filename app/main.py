@@ -16,7 +16,7 @@ from app.play.router import router as play_router
 from app.profile.router import router as profile_router
 from app.projects.router import router as projects_router
 from app.rate_limit import RateLimitMiddleware, SlidingWindowLimiter
-from app.request_context import RequestContextMiddleware, unexpected_error_handler
+from app.request_context import RequestContextMiddleware
 from app.security_headers import SecurityHeadersMiddleware
 from app.settings.router import router as settings_router
 
@@ -40,19 +40,7 @@ app = FastAPI(
     redoc_url=None,
     openapi_url=None if is_production() else "/openapi.json",
 )
-app.add_exception_handler(Exception, unexpected_error_handler)
-
 # Middleware runs from the last added (outermost) to the first added.
-# Origins allowed to call this API from a browser (comma separated).
-_origins = os.environ.get("FRONTEND_ORIGINS", "http://localhost:5173")
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[o.strip() for o in _origins.split(",") if o.strip() and o.strip() != "*"],
-    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
-    allow_headers=["Authorization", "Content-Type", "X-Request-ID"],
-    expose_headers=["X-Request-ID", "Retry-After"],
-    max_age=600,
-)
 app.add_middleware(SecurityHeadersMiddleware)
 app.state.rate_limiter = SlidingWindowLimiter()
 app.add_middleware(
@@ -63,6 +51,18 @@ app.add_middleware(
 )
 app.add_middleware(BodyLimitMiddleware)
 app.add_middleware(RequestContextMiddleware)
+# CORS is outermost so every answer carries its headers, also 429, 413 and 500:
+# without them the browser hides the real error behind a network failure.
+# Origins allowed to call this API from a browser (comma separated).
+_origins = os.environ.get("FRONTEND_ORIGINS", "http://localhost:5173")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[o.strip() for o in _origins.split(",") if o.strip() and o.strip() != "*"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
+    allow_headers=["Authorization", "Content-Type", "X-Request-ID"],
+    expose_headers=["X-Request-ID", "Retry-After"],
+    max_age=600,
+)
 
 app.include_router(auth_router)
 app.include_router(projects_router)
