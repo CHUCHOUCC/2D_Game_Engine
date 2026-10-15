@@ -103,3 +103,11 @@ def test_ai_objects_outside_the_world_are_rejected():
     client, _ = make_client(FakeAiClient([{"id": "a", "kind": "box", "x": 99999, "y": 1}]))
     project_id = client.post("/projects", json={"name": "p"}).json()["id"]
     assert client.post(f"/projects/{project_id}/ai", json={"prompt": "x"}).status_code == 502
+
+
+def test_ai_can_add_2d_characters():
+    ai = FakeAiClient([{"id": "w", "kind": "wizard", "x": 100, "y": 100}])
+    client, _ = make_client(ai)
+    project_id = client.post("/projects", json={"name": "p"}).json()["id"]
+    scene = client.post(f"/projects/{project_id}/ai", json={"prompt": "un mago"}).json()["scene"]
+    assert [obj["kind"] for obj in scene] == ["wizard"]
