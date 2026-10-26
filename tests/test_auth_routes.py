@@ -166,3 +166,17 @@ def test_repeated_failed_logins_return_429():
 def test_register_rejects_a_blank_username():
     client = make_client()
     assert register(client, username="   ").status_code == 422
+
+
+def test_failed_login_reports_the_attempts_left_in_a_header():
+    client = make_client()
+    register(client)
+    response = log_in(client, password="wrong password")
+    assert response.headers["x-attempts-remaining"] == "4"
+
+
+def test_usernames_must_be_3_to_20_letters_digits_or_underscores():
+    client = make_client()
+    for bad in ("ab", "x" * 21, "con espacio", "a-b-c"):
+        assert register(client, username=bad, email=f"{len(bad)}@example.com").status_code == 422, bad
+    assert register(client, username="nicky_dev", email="ok@example.com").status_code == 201
