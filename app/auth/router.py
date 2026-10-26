@@ -13,7 +13,8 @@ _EMAIL_PATTERN = r"^[^@\s]+@[^@\s]+\.[^@\s]+$"
 
 
 class RegisterIn(BaseModel):
-    username: str = Field(min_length=1, max_length=50, pattern=r"\S")
+    # 3-20 letters, digits or underscores: easy to read, to type and to mention.
+    username: str = Field(min_length=3, max_length=20, pattern=r"^[A-Za-z0-9_]+$")
     email: str = Field(pattern=_EMAIL_PATTERN, max_length=254)
     password: str = Field(min_length=8, max_length=128)
 
@@ -63,9 +64,10 @@ def log_in(body: LoginIn, request: Request, service: AuthService = Depends(get_a
         pair = service.log_in(body.email, body.password, _client_ip(request), request.headers.get("user-agent", ""))
     except TooManyAttemptsError:
         raise HTTPException(status_code=429, detail="Too many failed attempts, try again later")
-    except InvalidCredentialsError:
+    except InvalidCredentialsError as error:
         commit()  # keep the failed attempt, or the lockout could never count it
-        raise HTTPException(status_code=401, detail="Invalid email or password")
+        headers = {} if error.attempts_left is None else {"X-Attempts-Remaining": str(error.attempts_left)}
+        raise HTTPException(status_code=401, detail="Invalid email or password", headers=headers)
     return pair.to_json()
 
 
