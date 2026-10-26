@@ -60,7 +60,7 @@ app.add_middleware(
     allow_origins=[o.strip() for o in _origins.split(",") if o.strip() and o.strip() != "*"],
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
     allow_headers=["Authorization", "Content-Type", "X-Request-ID"],
-    expose_headers=["X-Request-ID", "Retry-After"],
+    expose_headers=["X-Request-ID", "Retry-After", "X-Attempts-Remaining"],
     max_age=600,
 )
 
