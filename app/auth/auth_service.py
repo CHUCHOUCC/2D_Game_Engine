@@ -59,7 +59,7 @@ class AuthService:
         if self._attempts is not None:
             self._attempts.record(clean_email, ip_address, valid)
         if not valid:
-            raise InvalidCredentialsError
+            raise InvalidCredentialsError(self._attempts_left(clean_email))
         self._users.touch_last_login(user.id)
         self._record(user.id, "user.login", ip_address=ip_address)
         return self._issue_pair(user.id, str(uuid.uuid4()), user_agent)
@@ -138,3 +138,10 @@ class AuthService:
     def _record(self, user_id, action, **extra):
         if self._audit is not None:
             self._audit.record(user_id, action, "user", user_id, **extra)
+
+    def _attempts_left(self, email):
+        """Failures the email can still make before the lockout (None if not counted)."""
+        if self._attempts is None:
+            return None
+        since = datetime.now(timezone.utc) - LOCKOUT_WINDOW
+        return max(0, MAX_FAILED_LOGINS - self._attempts.failures_since(email, since))
