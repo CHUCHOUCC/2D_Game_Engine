@@ -158,3 +158,15 @@ def test_characters_are_seeded_with_physics_textures_and_lines(connection):
     assert {t["code"] for t in catalog.textures()} >= {"villager", "knight", "wizard"}
     said = {row["kind"] for row in catalog.character_lines()}
     assert said == {"villager", "knight", "wizard"}
+
+
+def test_new_enemies_items_and_obstacles_are_seeded(connection):
+    catalog = CatalogRepository(connection)
+    kinds = {row["code"]: row for row in catalog.kinds()}
+    for code in ("bat", "spider", "ghost", "brute"):
+        assert kinds[code]["hostile"] is True and kinds[code]["category"] == "enemy"
+    for code in ("potion", "sword", "axe", "wand", "bow"):
+        assert kinds[code]["collectible"] is True
+    assert kinds["chest"]["body_type"] == "static"
+    assert kinds["barrel"]["movable"] is True
+    assert {"spider", "ghost", "brute"} <= {e["code"] for e in catalog.enemies()}
