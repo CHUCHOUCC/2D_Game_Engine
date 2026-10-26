@@ -224,3 +224,14 @@ def test_one_address_failing_on_many_emails_is_locked_out():
     with pytest.raises(TooManyAttemptsError):
         fixture.service.log_in("jesus@example.com", PASSWORD, ip_address="6.6.6.6")
     assert fixture.service.log_in("jesus@example.com", PASSWORD, ip_address="1.1.1.1")
+
+
+def test_a_failed_login_says_how_many_attempts_are_left():
+    fixture = AuthFixture()
+    registered(fixture)
+    lefts = []
+    for _ in range(3):
+        with pytest.raises(InvalidCredentialsError) as caught:
+            fixture.service.log_in("jesus@example.com", "wrong password")
+        lefts.append(caught.value.attempts_left)
+    assert lefts == [4, 3, 2]
