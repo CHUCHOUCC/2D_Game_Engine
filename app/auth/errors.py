@@ -7,7 +7,15 @@ class EmailAlreadyRegisteredError(AuthError):
 
 
 class InvalidCredentialsError(AuthError):
-    """Wrong email or password. The message never says which one was wrong."""
+    """Wrong email or password. The message never says which one was wrong.
+
+    attempts_left says how many more failures the email has before the lockout
+    (None when the service does not count attempts).
+    """
+
+    def __init__(self, attempts_left=None):
+        super().__init__("Invalid email or password")
+        self.attempts_left = attempts_left
 
 
 class InvalidTokenError(AuthError):
