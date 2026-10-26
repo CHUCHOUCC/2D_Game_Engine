@@ -42,11 +42,11 @@ PostgreSQL (Supabase in production). The schema lives in `migrations/` as number
 
 | Table | What it holds |
 |---|---|
-| `object_kinds` | player, box, wall, house, tree, spike, coin, enemy and their flags |
+| `object_kinds` | The 24 kinds (player, building, obstacles, 5 enemies, items and weapons, characters) and their flags |
 | `physics_materials` | Friction, bounce, density (stone, wood, flesh, metal) |
 | `object_physics` | Arcade Physics body of each kind (static/dynamic, mass, drag) |
-| `enemy_types` | Slime, skeleton, bat: health, speed, damage, behaviour |
-| `texture_packs`, `textures`, `sprite_animations`, `tilesets`, `tiles` | The pixel-art pack |
+| `enemy_types` | Slime, skeleton, bat, spider, ghost, brute: health, speed, damage, behaviour |
+| `texture_packs`, `textures`, `sprite_animations`, `tilesets`, `tiles` | The pixel-art packs (own pack and Kenney Tiny Dungeon/Town, CC0) |
 | `character_lines` | What the 2D characters (villager, knight, wizard) say |
 
 ## Play and AI learning (14)
