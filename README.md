@@ -82,9 +82,12 @@ another user's project answers 404.
 | `GET /catalog/kinds`, `/catalog/enemies`, `/catalog/textures` | Object kinds with physics, enemies, texture pack |
 | `GET /catalog/characters` | What each 2D character says |
 
-Object kinds: `player` (one per scene), `box`, `wall`, `house`, `tree`, `spike`, `coin`, `enemy`, and the
-2D characters `villager`, `knight` and `wizard` (friendly, they walk around and talk; their lines come
-from the `character_lines` table through `GET /catalog/characters`).
+Object kinds (24): `player` (one per scene); building `wall`, `house`, `tree`, `bush`, `fence`;
+obstacles `box`, `barrel`, `spike`; enemies `enemy` (slime), `bat`, `spider`, `ghost`, `brute`; items
+`coin`, `chest`, `potion` and the weapons `sword`, `axe`, `wand`, `bow`; and the 2D characters
+`villager`, `knight` and `wizard` (friendly, they walk around and talk; their lines come from the
+`character_lines` table through `GET /catalog/characters`). The textures are the Kenney "Tiny Dungeon"
+and "Tiny Town" packs (CC0), registered as the `kenney-tiny` texture pack.
 The world is 1600 × 960 pixels; objects outside it are rejected, also when they come from the AI.
 
 ## How the AI learns
