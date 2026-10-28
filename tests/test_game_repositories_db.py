@@ -96,7 +96,7 @@ def test_ready_made_maps_are_seeded_and_valid(connection):
 
     repo = ProjectRepository(connection)
     templates = {t["code"]: t for t in repo.list_templates()}
-    for code in ("kenney-dungeon", "kenney-kingdom", "kenney-house"):
+    for code in ("kenney-dungeon", "kenney-kingdom", "kenney-house", "kenney-city", "kenney-village"):
         scene = templates[code]["scene"]
         assert templates[code]["object_count"] == len(scene)
         SceneUpdate(scene=scene)  # the same rules as saving a scene: kinds, bounds, one player
