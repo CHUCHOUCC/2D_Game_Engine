@@ -40,15 +40,25 @@ DEFAULT_RULES = (
 class SlidingWindowLimiter:
     """Remembers the time of each request per key and drops the old ones."""
 
+    # Every this many requests, forget clients that have been quiet for a while,
+    # so the table does not grow with every address that ever called the API.
+    SWEEP_EVERY = 1000
+
     def __init__(self, clock=time.monotonic):
         self._clock = clock
         self._hits: dict = {}
         self._lock = threading.Lock()
+        self._calls = 0
+        self._longest_window = 0.0
 
     def hit(self, key: str, limit: int, window: float) -> float:
         """Record a request. Returns 0 if allowed, or the seconds to wait if not."""
         now = self._clock()
         with self._lock:
+            self._longest_window = max(self._longest_window, window)
+            self._calls += 1
+            if self._calls % self.SWEEP_EVERY == 0:
+                self._sweep(now)
             hits = self._hits.setdefault(key, deque())
             while hits and hits[0] <= now - window:
                 hits.popleft()
@@ -56,6 +66,16 @@ class SlidingWindowLimiter:
                 return max(0.0, hits[0] + window - now)
             hits.append(now)
             return 0.0
+
+    def _sweep(self, now: float) -> None:
+        """Drop the keys whose newest request is older than the longest window."""
+        for key in [k for k, hits in self._hits.items() if not hits or hits[-1] <= now - self._longest_window]:
+            del self._hits[key]
+
+    def size(self) -> int:
+        """How many clients are being tracked (for tests and monitoring)."""
+        with self._lock:
+            return len(self._hits)
 
     def reset(self) -> None:
         with self._lock:

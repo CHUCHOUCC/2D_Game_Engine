@@ -178,6 +178,7 @@ def add_objects_with_ai(
 ):
     """Ask the AI service for new objects and add them to the project's scene."""
     project = load_project(project_id, repo, owner_id)
+    repo.commit()  # do not hold the database while the AI answers
     try:
         generated = ai_client.generate(body.prompt, list(project.scene))
     except AiServiceError as error:

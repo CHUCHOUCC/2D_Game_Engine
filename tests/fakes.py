@@ -78,7 +78,11 @@ class FakeRefreshTokenRepository:
                 self.tokens[token_id] = replace(token, revoked_at=now)
 
     def mark_replaced(self, token_id, replaced_by):
+        token = self.tokens.get(token_id)
+        if token is None or token.revoked_at is not None:
+            return False
         self._revoke_where(lambda t: t.id == token_id)
+        return True
 
     def revoke(self, token_id):
         self._revoke_where(lambda t: t.id == token_id)
@@ -110,8 +114,9 @@ class FakeLoginAttempts:
     def record(self, email, ip_address, succeeded):
         self.attempts.append((email, ip_address, succeeded, datetime.now(timezone.utc)))
 
-    def failures_since(self, email, since):
-        return sum(1 for e, _, ok, at in self.attempts if e == email and not ok and at >= since)
+    def failures_since(self, email, since, ip_address=None):
+        return sum(1 for e, ip, ok, at in self.attempts
+                   if e == email and not ok and at >= since and (ip_address is None or ip == ip_address))
 
     def failures_from_ip_since(self, ip_address, since):
         return sum(1 for _, ip, ok, at in self.attempts if ip == ip_address and not ok and at >= since)

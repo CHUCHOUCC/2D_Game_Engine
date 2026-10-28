@@ -85,6 +85,14 @@ class ProjectRepository:
         ).fetchone()
         return row["scene"] if row else None
 
+    def commit(self) -> None:
+        """Save what the request wrote so far and end the transaction.
+
+        Called before a slow call to the AI service, so the database
+        connection is not held while it answers.
+        """
+        self._connection.commit()
+
     def template_scene(self, code: str):
         row = self._connection.execute(
             "select scene from level_templates where code = %s", (code,)
@@ -93,6 +101,6 @@ class ProjectRepository:
 
     def list_templates(self) -> list:
         return self._connection.execute(
-            "select code, name, description, jsonb_array_length(scene) as object_count "
+            "select code, name, description, jsonb_array_length(scene) as object_count, scene "
             "from level_templates order by id"
         ).fetchall()

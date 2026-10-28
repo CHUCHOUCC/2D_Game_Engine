@@ -46,6 +46,7 @@ def add_learned_obstacles(
     """Let the learned model place new obstacles where players struggle least."""
     project = load_project(project_id, repo, user.id)
     model = models.get(project_id)
+    repo.commit()  # do not hold the database while the AI answers
     started = time.monotonic()
     try:
         reply = ai_client.obstacles(model["parameters"], list(project.scene), body.count)

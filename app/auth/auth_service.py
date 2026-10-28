@@ -7,8 +7,12 @@ from .token_pair import TokenPair
 
 # How long a refresh token stays valid; the access token lives much less (JwtCodec).
 REFRESH_DURATION = timedelta(days=7)
-# After this many failed logins in LOCKOUT_WINDOW the email is locked for a while.
+# After this many failed logins in LOCKOUT_WINDOW from one address, that address
+# cannot log in to the email for a while. Counting per (email, address) means a
+# stranger who types someone's email wrong five times does not lock them out.
 MAX_FAILED_LOGINS = 5
+# Guesses at one email from many addresses (a distributed attack) lock it for everyone.
+MAX_FAILED_LOGINS_PER_EMAIL = 50
 # One address trying many emails is also slowed down.
 MAX_FAILED_LOGINS_PER_IP = 20
 LOCKOUT_WINDOW = timedelta(minutes=15)
@@ -59,7 +63,7 @@ class AuthService:
         if self._attempts is not None:
             self._attempts.record(clean_email, ip_address, valid)
         if not valid:
-            raise InvalidCredentialsError(self._attempts_left(clean_email))
+            raise InvalidCredentialsError(self._attempts_left(clean_email, ip_address))
         self._users.touch_last_login(user.id)
         self._record(user.id, "user.login", ip_address=ip_address)
         return self._issue_pair(user.id, str(uuid.uuid4()), user_agent)
@@ -76,7 +80,11 @@ class AuthService:
         if not stored.is_usable():
             raise InvalidTokenError("refresh token expired")
         pair, new_token = self._issue_pair(stored.user_id, stored.family_id, user_agent, return_stored=True)
-        self._refresh_tokens.mark_replaced(stored.id, new_token.id)
+        if not self._refresh_tokens.mark_replaced(stored.id, new_token.id):
+            # Another request rotated this token a moment ago: same as a reuse.
+            self._refresh_tokens.revoke_family(stored.family_id)
+            self._record(stored.user_id, "token.reuse_detected")
+            raise InvalidTokenError("refresh token reused")
         return pair
 
     def user_from_token(self, access_token):
@@ -130,7 +138,9 @@ class AuthService:
         if self._attempts is None:
             return
         since = datetime.now(timezone.utc) - LOCKOUT_WINDOW
-        if self._attempts.failures_since(email, since) >= MAX_FAILED_LOGINS:
+        if self._attempts.failures_since(email, since, ip_address) >= MAX_FAILED_LOGINS:
+            raise TooManyAttemptsError
+        if self._attempts.failures_since(email, since) >= MAX_FAILED_LOGINS_PER_EMAIL:
             raise TooManyAttemptsError
         if ip_address and self._attempts.failures_from_ip_since(ip_address, since) >= MAX_FAILED_LOGINS_PER_IP:
             raise TooManyAttemptsError
@@ -139,9 +149,9 @@ class AuthService:
         if self._audit is not None:
             self._audit.record(user_id, action, "user", user_id, **extra)
 
-    def _attempts_left(self, email):
-        """Failures the email can still make before the lockout (None if not counted)."""
+    def _attempts_left(self, email, ip_address=""):
+        """Failures this address can still make on the email before the lockout (None if not counted)."""
         if self._attempts is None:
             return None
         since = datetime.now(timezone.utc) - LOCKOUT_WINDOW
-        return max(0, MAX_FAILED_LOGINS - self._attempts.failures_since(email, since))
+        return max(0, MAX_FAILED_LOGINS - self._attempts.failures_since(email, since, ip_address))

@@ -1,5 +1,9 @@
+import os
+
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, Field
+
+from app.rate_limit import client_ip
 
 from .auth_service import AuthService
 from .dependencies import bearer_token, current_user, get_auth_service, get_commit
@@ -43,7 +47,14 @@ def _user_json(user: User) -> dict:
 
 
 def _client_ip(request: Request) -> str:
-    return request.client.host if request.client else ""
+    """The caller's real address, read the same way as the rate limiter.
+
+    Behind Render's proxy request.client is the proxy itself: counting failed
+    logins by it would lock everybody out after 20 mistakes by anyone.
+    """
+    hops = int(os.environ.get("TRUSTED_PROXY_HOPS", "0"))
+    ip = client_ip(request.scope, hops)
+    return "" if ip == "unknown" else ip
 
 
 @router.post("/register", status_code=201)

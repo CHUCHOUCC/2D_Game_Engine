@@ -44,7 +44,8 @@ def test_register_play_learn_and_log_out(client):
     assert client.put(f"/projects/{project['id']}/scene", json={"scene": scene}, headers=headers).status_code == 200
 
     run = client.post(f"/projects/{project['id']}/plays", headers=headers).json()
-    result = {"outcome": "won", "score": 90, "coins_collected": 2, "coins_total": 2, "enemies_defeated": 1,
+    # The village has 2 coins (1 point each) and a slime (5 points).
+    result = {"outcome": "won", "score": 7, "coins_collected": 2, "coins_total": 2, "enemies_defeated": 1,
               "damage_taken": 0, "deaths": 0, "duration_ms": 30000, "events": []}
     finished = client.post(f"/projects/{project['id']}/plays/{run['id']}/finish", json=result, headers=headers).json()
     assert finished["learned"] is True

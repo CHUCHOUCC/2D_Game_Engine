@@ -75,7 +75,8 @@ def test_a_full_run_updates_stats_and_scores(connection, user, project):
     plays = PlayRepository(connection)
     run_id = plays.start(project.id, user.id, 0.5)
     assert plays.find_open(run_id, project.id, user.id)["difficulty"] == 0.5
-    plays.finish(run_id, RUN)
+    assert plays.finish(run_id, RUN) is True
+    assert plays.finish(run_id, RUN) is False  # a run is closed only once
     plays.add_to_player_stats(user.id, RUN)
     plays.add_to_player_stats(user.id, RUN)
     plays.add_high_score(project.id, user.id, 50)
@@ -88,6 +89,18 @@ def test_a_full_run_updates_stats_and_scores(connection, user, project):
         "select kind from play_events where play_session_id = %s order by id", (run_id,)
     ).fetchall()
     assert [e["kind"] for e in events] == ["coin", "summary"]
+
+
+def test_ready_made_maps_are_seeded_and_valid(connection):
+    from app.projects.schemas import SceneUpdate
+
+    repo = ProjectRepository(connection)
+    templates = {t["code"]: t for t in repo.list_templates()}
+    for code in ("kenney-dungeon", "kenney-kingdom", "kenney-house"):
+        scene = templates[code]["scene"]
+        assert templates[code]["object_count"] == len(scene)
+        SceneUpdate(scene=scene)  # the same rules as saving a scene: kinds, bounds, one player
+        assert sum(1 for obj in scene if obj["kind"] == "player") == 1
 
 
 def test_ai_model_upsert_and_samples(connection, user, project):

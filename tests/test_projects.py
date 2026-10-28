@@ -17,6 +17,9 @@ class FakeProjectRepository:
         self.versions = {}
         self.templates = {"village": {"name": "Aldea", "scene": [{"id": "h", "kind": "house", "x": 64, "y": 64}]}}
 
+    def commit(self):
+        self.commits = getattr(self, "commits", 0) + 1
+
     def create(self, owner_id, name, scene):
         project = Project(self._next_id, owner_id, name, scene, datetime.now(timezone.utc))
         self._projects[project.id] = project
@@ -71,7 +74,7 @@ class FakeProjectRepository:
         return self.templates.get(code, {}).get("scene")
 
     def list_templates(self):
-        return [{"code": c, "name": t["name"], "description": "", "object_count": len(t["scene"])}
+        return [{"code": c, "name": t["name"], "description": "", "object_count": len(t["scene"]), "scene": t["scene"]}
                 for c, t in self.templates.items()]
 
 
@@ -165,6 +168,13 @@ def test_unknown_template_is_rejected():
 def test_list_templates():
     client, _ = make_client()
     assert [t["code"] for t in client.get("/projects/templates").json()] == ["village"]
+
+
+def test_templates_carry_their_scene_for_the_map_preview():
+    client, _ = make_client()
+    village = client.get("/projects/templates").json()[0]
+    assert village["object_count"] == len(village["scene"]) == 1
+    assert village["scene"][0]["kind"] == "house"
 
 
 def test_unknown_kinds_and_out_of_world_positions_are_rejected():

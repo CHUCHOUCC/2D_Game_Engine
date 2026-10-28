@@ -70,6 +70,30 @@ def test_sliding_window_allows_the_limit_then_blocks_until_the_window_moves():
     assert limiter.hit("other", 3, 60) == 0.0
 
 
+def test_the_limiter_forgets_clients_that_went_quiet():
+    now = [0.0]
+    limiter = SlidingWindowLimiter(clock=lambda: now[0])
+    for n in range(500):
+        limiter.hit(f"old-{n}", 10, 60)
+    assert limiter.size() == 500
+    now[0] = 120  # every old client is past its window
+    for _ in range(SlidingWindowLimiter.SWEEP_EVERY):
+        limiter.hit("active", 10_000, 60)
+    assert limiter.size() == 1
+
+
+def test_login_failures_are_counted_by_the_real_client_address(monkeypatch):
+    from app.auth.router import _client_ip
+
+    class FakeRequest:
+        scope = {"client": ("10.0.0.1", 1), "headers": [(b"x-forwarded-for", b"6.6.6.6")]}
+
+    monkeypatch.setenv("TRUSTED_PROXY_HOPS", "1")
+    assert _client_ip(FakeRequest()) == "6.6.6.6"
+    monkeypatch.setenv("TRUSTED_PROXY_HOPS", "0")
+    assert _client_ip(FakeRequest()) == "10.0.0.1"
+
+
 def test_forwarded_for_is_trusted_only_behind_known_proxies():
     scope = {"client": ("10.0.0.1", 1), "headers": [(b"x-forwarded-for", b"6.6.6.6, 1.2.3.4")]}
     assert client_ip(scope) == "10.0.0.1"
