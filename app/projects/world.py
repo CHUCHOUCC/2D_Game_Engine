@@ -19,3 +19,9 @@ ITEM_KINDS = ("chest", "potion", "sword", "axe", "wand", "bow")
 # 2D characters: friendly people that walk around and talk to the player.
 CHARACTER_KINDS = ("villager", "knight", "wizard")
 MAX_OBJECTS = 600
+
+# Points the game gives for each coin and for defeating each kind of enemy.
+# Same values as the frontend (ScoreCounter.ts and combat.ts): the backend uses
+# them to reject runs that claim more points than the level can give.
+COIN_POINTS = 1
+ENEMY_POINTS = {"enemy": 5, "bat": 3, "spider": 4, "ghost": 6, "brute": 15}

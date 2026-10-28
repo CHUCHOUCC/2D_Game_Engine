@@ -10,6 +10,7 @@ class FakePlayRepository:
         self.stats = {}
         self.scores = []
         self.summaries = []
+        self.commits = 0
         self._next_id = 1
 
     def start(self, project_id, player_id, difficulty):
@@ -26,7 +27,13 @@ class FakePlayRepository:
         return None
 
     def finish(self, play_id, result):
+        if self.runs[play_id]["result"] is not None:
+            return False
         self.runs[play_id]["result"] = result
+        return True
+
+    def commit(self):
+        self.commits += 1
 
     def add_to_player_stats(self, user_id, result):
         stats = self.stats.setdefault(user_id, {"games_played": 0, "best_score": 0, "enemies_defeated": 0})

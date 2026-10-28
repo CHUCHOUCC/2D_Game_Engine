@@ -24,19 +24,27 @@ class PlayRepository:
             (play_id, project_id, player_id),
         ).fetchone()
 
-    def finish(self, play_id: int, result: RunResult) -> None:
-        self._connection.execute(
+    def finish(self, play_id: int, result: RunResult) -> bool:
+        """Close the run. Returns False if it was already closed.
+
+        The check and the update are one statement, so two requests that try
+        to finish the same run at the same time cannot both succeed.
+        """
+        row = self._connection.execute(
             "update play_sessions set ended_at = now(), outcome = %s, score = %s, coins_collected = %s, "
             "coins_total = %s, enemies_defeated = %s, damage_taken = %s, deaths = %s, duration_ms = %s "
-            "where id = %s",
+            "where id = %s and ended_at is null returning id",
             (result.outcome, result.score, result.coins_collected, result.coins_total,
              result.enemies_defeated, result.damage_taken, result.deaths, result.duration_ms, play_id),
-        )
+        ).fetchone()
+        if row is None:
+            return False
         with self._connection.cursor() as cursor:
             cursor.executemany(
                 "insert into play_events (play_session_id, kind, x, y, at_ms) values (%s, %s, %s, %s, %s)",
                 [(play_id, e.kind, e.x, e.y, e.at_ms) for e in result.events],
             )
+        return True
 
     def add_to_player_stats(self, user_id: int, result: RunResult) -> None:
         won = 1 if result.outcome == "won" else 0
@@ -78,6 +86,14 @@ class PlayRepository:
             "enemies_defeated, deaths, play_time_ms from player_stats where user_id = %s",
             (user_id,),
         ).fetchone()
+
+    def commit(self) -> None:
+        """Save what this request wrote so far, before a slow call to another service.
+
+        With a transaction pooler (Supabase/pgbouncer) this also gives the
+        database connection back while the AI service answers.
+        """
+        self._connection.commit()
 
     def record_event_summary(self, play_id: int, details: dict) -> None:
         """Attach a summary event (e.g. what the AI learned) to the run."""

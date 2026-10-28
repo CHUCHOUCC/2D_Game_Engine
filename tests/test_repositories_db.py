@@ -81,8 +81,10 @@ def test_refresh_token_round_trip_and_rotation(connection, users):
     assert first.family_id == FAMILY
     assert first.is_usable()
     second = tokens.create(user.id, "s" * 64, FAMILY, expires)
-    tokens.mark_replaced(first.id, second.id)
+    assert tokens.mark_replaced(first.id, second.id) is True
     assert tokens.find_by_hash("r" * 64).revoked_at is not None
+    # A second rotation of the same token (a concurrent refresh) loses.
+    assert tokens.mark_replaced(first.id, second.id) is False
     tokens.revoke_family(FAMILY)
     assert tokens.find_by_hash("s" * 64).is_usable() is False
 
@@ -116,6 +118,8 @@ def test_login_attempts_count_only_recent_failures(connection):
     since = datetime.now(timezone.utc) - timedelta(minutes=1)
     assert attempts.failures_since("x@example.com", since) == 2
     assert attempts.failures_since("x@example.com", datetime.now(timezone.utc) + timedelta(minutes=1)) == 0
+    assert attempts.failures_since("x@example.com", since, "1.1.1.1") == 2
+    assert attempts.failures_since("x@example.com", since, "2.2.2.2") == 0
 
 
 def test_roles_and_last_login(users):

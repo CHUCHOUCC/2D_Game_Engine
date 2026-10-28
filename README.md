@@ -36,6 +36,12 @@ Open http://127.0.0.1:8000/health (`{"ok": true}`) and http://127.0.0.1:8000/hea
 
 Each file documents its invariant, its costs and what happens when the structure is empty.
 
+## Ready-made maps
+
+New projects can start from three maps taken from Kenney's sample maps (CC0): a dungeon, a
+kingdom and a house. `maps/README.md` explains where each one comes from and how it was
+converted; `python tools/build_maps.py` rebuilds their migration.
+
 ## Database
 
 53 tables, created by the numbered SQL files in `migrations/`. See [docs/database.md](docs/database.md)

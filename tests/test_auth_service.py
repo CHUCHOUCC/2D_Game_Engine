@@ -169,6 +169,21 @@ def test_reusing_a_rotated_refresh_token_revokes_the_whole_family():
     assert (1, "token.reuse_detected") in fixture.audit.entries
 
 
+def test_losing_a_refresh_race_counts_as_reuse():
+    fixture = AuthFixture()
+    first = logged_in(fixture)
+    stored = fixture.refresh_tokens.find_by_hash(TokenGenerator().hash(first.refresh_token))
+    # Another request retires the token after this one read it but before it rotated it.
+    original = fixture.refresh_tokens.mark_replaced
+    fixture.refresh_tokens.mark_replaced = lambda token_id, by: original(token_id, by) and False
+    with pytest.raises(InvalidTokenError):
+        fixture.service.refresh(first.refresh_token)
+    fixture.refresh_tokens.mark_replaced = original
+    family = [t for t in fixture.refresh_tokens.tokens.values() if t.family_id == stored.family_id]
+    assert all(t.revoked_at is not None for t in family)
+    assert (1, "token.reuse_detected") in fixture.audit.entries
+
+
 def test_an_expired_refresh_token_is_rejected():
     fixture = AuthFixture(refresh_duration=timedelta(seconds=-1))
     pair = logged_in(fixture)
@@ -235,3 +250,24 @@ def test_a_failed_login_says_how_many_attempts_are_left():
             fixture.service.log_in("jesus@example.com", "wrong password")
         lefts.append(caught.value.attempts_left)
     assert lefts == [4, 3, 2]
+
+
+def test_failures_from_a_stranger_do_not_lock_the_owner_out():
+    fixture = AuthFixture()
+    registered(fixture)
+    for _ in range(5):
+        with pytest.raises(InvalidCredentialsError):
+            fixture.service.log_in("jesus@example.com", "wrong password", ip_address="6.6.6.6")
+    with pytest.raises(TooManyAttemptsError):
+        fixture.service.log_in("jesus@example.com", PASSWORD, ip_address="6.6.6.6")
+    assert fixture.service.log_in("jesus@example.com", PASSWORD, ip_address="1.1.1.1")
+
+
+def test_many_addresses_guessing_one_email_lock_it_for_everyone():
+    fixture = AuthFixture()
+    registered(fixture)
+    for n in range(50):
+        with pytest.raises(InvalidCredentialsError):
+            fixture.service.log_in("jesus@example.com", "wrong password", ip_address=f"10.0.0.{n}")
+    with pytest.raises(TooManyAttemptsError):
+        fixture.service.log_in("jesus@example.com", PASSWORD, ip_address="1.1.1.1")

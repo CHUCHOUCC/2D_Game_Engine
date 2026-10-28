@@ -10,6 +10,7 @@ from app.projects.router import get_repository, load_project
 from .achievements import AchievementRepository, earned_codes
 from .repository import PlayRepository
 from .schemas import RunResult
+from .validation import ImplausibleRunError, check_run
 
 router = APIRouter(tags=["play"])
 
@@ -44,10 +45,16 @@ def finish_run(
     achievements: AchievementRepository = Depends(get_achievements),
 ):
     """Save the run, update the player's totals and let the AI learn from it."""
-    load_project(project_id, repo, user.id)
+    project = load_project(project_id, repo, user.id)
     if plays.find_open(play_id, project_id, user.id) is None:
         raise HTTPException(status_code=404, detail="Run not found or already finished")
-    plays.finish(play_id, body)
+    try:
+        check_run(body, list(project.scene))
+    except ImplausibleRunError as error:
+        raise HTTPException(status_code=422, detail=f"Run rejected: {error}")
+    if not plays.finish(play_id, body):
+        # Another request finished this run between the check above and now.
+        raise HTTPException(status_code=404, detail="Run not found or already finished")
     plays.add_to_player_stats(user.id, body)
     plays.add_high_score(project_id, user.id, body.score)
     unlocked = achievements.unlock(user.id, earned_codes(body, plays.stats_of(user.id)))
@@ -55,6 +62,10 @@ def finish_run(
     model = models.get(project_id)
     learning = {"learned": False, "difficulty": difficulty_of(model)}
     if ai_client is not None:
+        # The run is saved before the slow call: if the AI service hangs, or the
+        # request dies, the player keeps the run, and the database connection
+        # is not held while the AI answers.
+        plays.commit()
         try:
             reply = ai_client.learn(model["parameters"], body.summary())
         except AiServiceError:

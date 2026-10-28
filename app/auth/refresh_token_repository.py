@@ -23,11 +23,18 @@ class RefreshTokenRepository:
         ).fetchone()
         return RefreshToken(**row) if row else None
 
-    def mark_replaced(self, token_id: int, replaced_by: int) -> None:
-        self._connection.execute(
-            "update refresh_tokens set revoked_at = now(), replaced_by = %s where id = %s",
+    def mark_replaced(self, token_id: int, replaced_by: int) -> bool:
+        """Retire a used token. Returns False if another request already did.
+
+        Check and update are one statement: of two refreshes with the same
+        token at the same time, only one can win.
+        """
+        row = self._connection.execute(
+            "update refresh_tokens set revoked_at = now(), replaced_by = %s "
+            "where id = %s and revoked_at is null returning id",
             (replaced_by, token_id),
-        )
+        ).fetchone()
+        return row is not None
 
     def revoke(self, token_id: int) -> None:
         self._connection.execute(
