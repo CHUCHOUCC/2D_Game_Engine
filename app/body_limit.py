@@ -1,6 +1,6 @@
 """Rejects request bodies bigger than a limit (413) before the app reads them.
 
-A scene of 600 objects is about 60 KB, so 1 MB leaves plenty of room while
+A scene of 1500 objects is about 150 KB, so 1 MB leaves plenty of room while
 stopping clients that try to exhaust memory with huge uploads.
 """
 import json

@@ -13,12 +13,17 @@ OBJECT_KINDS = (
     "chest", "potion", "sword", "axe", "wand", "bow",
     # more obstacles
     "barrel", "fence", "bush",
+    # the weapons of the newer heroes
+    "dagger", "hammer", "spear", "staff",
+    # ground: a road or stone tile drawn under everything (no body), for towns and cities
+    "path",
 )
 ENEMY_KINDS = ("enemy", "bat", "spider", "ghost", "brute")
-ITEM_KINDS = ("chest", "potion", "sword", "axe", "wand", "bow")
+ITEM_KINDS = ("chest", "potion", "sword", "axe", "wand", "bow", "dagger", "hammer", "spear", "staff")
 # 2D characters: friendly people that walk around and talk to the player.
 CHARACTER_KINDS = ("villager", "knight", "wizard")
-MAX_OBJECTS = 600
+# Big enough for a whole city of 50 x 30 tiles with its roads.
+MAX_OBJECTS = 1500
 
 # Points the game gives for each coin and for defeating each kind of enemy.
 # Same values as the frontend (ScoreCounter.ts and combat.ts): the backend uses
