@@ -51,7 +51,7 @@ def add_learned_obstacles(
     try:
         reply = ai_client.obstacles(model["parameters"], list(project.scene), body.count)
     except AiServiceError as error:
-        raise HTTPException(status_code=502, detail=str(error))
+        raise HTTPException(status_code=502, detail="La IA no respondió, inténtalo de nuevo") from error
     objects = validate_generated(reply["objects"])
     scene = append_objects(project, objects)
     elapsed = int((time.monotonic() - started) * 1000)

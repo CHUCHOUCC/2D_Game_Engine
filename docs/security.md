@@ -26,8 +26,28 @@ Every request goes through these layers, from the outside in:
 | `POST /projects/{id}/ai...` | 20 per minute |
 | Everything | 300 per minute |
 
-Behind Render's proxy set `TRUSTED_PROXY_HOPS=1` so the real client IP is used. The counters live in
-memory: with several instances, move them to a shared store (Redis).
+Each limit counts the visitor's real address (`app/rate_limit.py`, `proxy_settings`). On Render
+(`RENDER=true`, set by Render itself) requests pass through Cloudflare and two proxies: the address
+comes from `CF-Connecting-IP` / `True-Client-IP`, which the edge sets and a client cannot fake there,
+or else from `X-Forwarded-For` read three entries from the end (clients can write anything at its
+start). Elsewhere nothing is trusted unless `TRUSTED_PROXY_HOPS` or `TRUST_EDGE_IP_HEADER` say so.
+Before this, behind Render every request seemed to come from a different proxy, so the login limit
+never triggered. The counters live in memory: with several instances, move them to a shared store
+(Redis).
+
+## Database
+
+Migration 091 turns on row level security on every table and takes back every grant from Supabase's
+`anon` and `authenticated` roles: the hosted database's own REST API cannot read or write anything.
+The API connects as the owner of the tables, which row level security does not restrict. A test
+fails if a new table is created without row level security.
+
+## What the API tells strangers
+
+- No interactive docs or OpenAPI schema in production (404).
+- `/health` and `/health/db` answer only `{"ok": true}`.
+- Errors never carry internals: unexpected ones are a generic 500 with a request id, AI failures say
+  only that the AI did not answer, and a rejected run says only "Run rejected".
 
 ## Accounts and tokens
 

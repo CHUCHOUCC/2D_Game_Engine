@@ -15,7 +15,7 @@ from app.database import database_connection
 from app.play.router import router as play_router
 from app.profile.router import router as profile_router
 from app.projects.router import router as projects_router
-from app.rate_limit import RateLimitMiddleware, SlidingWindowLimiter
+from app.rate_limit import RateLimitMiddleware, SlidingWindowLimiter, proxy_settings
 from app.request_context import RequestContextMiddleware
 from app.security_headers import SecurityHeadersMiddleware
 from app.settings.router import router as settings_router
@@ -43,10 +43,12 @@ app = FastAPI(
 # Middleware runs from the last added (outermost) to the first added.
 app.add_middleware(SecurityHeadersMiddleware)
 app.state.rate_limiter = SlidingWindowLimiter()
+_hops, _edge = proxy_settings()
 app.add_middleware(
     RateLimitMiddleware,
     limiter=app.state.rate_limiter,
-    trusted_proxy_hops=int(os.environ.get("TRUSTED_PROXY_HOPS", "0")),
+    trusted_proxy_hops=_hops,
+    trust_edge_header=_edge,
     multiplier=int(os.environ.get("RATE_LIMIT_MULTIPLIER", "1")),
 )
 app.add_middleware(BodyLimitMiddleware)
@@ -80,6 +82,6 @@ def health():
 
 @app.get("/health/db")
 def health_database(connection=Depends(database_connection)):
-    """Check that the database answers and report how many migrations ran."""
-    row = connection.execute("select count(*) as n from schema_migrations").fetchone()
-    return {"ok": True, "migrations": row["n"]}
+    """Check that the database answers (the uptime monitor calls it). Says nothing else."""
+    connection.execute("select 1").fetchone()
+    return {"ok": True}

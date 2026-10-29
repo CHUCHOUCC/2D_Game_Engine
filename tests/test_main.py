@@ -24,17 +24,17 @@ def test_docs_keep_working_without_the_strict_csp():
     assert "content-security-policy" not in response.headers
 
 
-def test_health_db_reports_the_migrations():
+def test_health_db_checks_the_database_but_tells_nothing_about_it():
     class FakeConnection:
         def execute(self, sql):
             class Result:
                 def fetchone(self):
-                    return {"n": 80}
+                    return {"?column?": 1}
             return Result()
 
     app.dependency_overrides[database_connection] = lambda: FakeConnection()
     try:
-        assert TestClient(app).get("/health/db").json() == {"ok": True, "migrations": 80}
+        assert TestClient(app).get("/health/db").json() == {"ok": True}
     finally:
         app.dependency_overrides.clear()
 

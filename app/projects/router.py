@@ -182,6 +182,6 @@ def add_objects_with_ai(
     try:
         generated = ai_client.generate(body.prompt, list(project.scene))
     except AiServiceError as error:
-        raise HTTPException(status_code=502, detail=str(error))
+        raise HTTPException(status_code=502, detail="La IA no respondió, inténtalo de nuevo") from error
     scene = append_objects(project, validate_generated(generated))
     return project_json(repo.update_scene(project_id, owner_id, scene))
