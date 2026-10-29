@@ -17,8 +17,12 @@ OBJECT_KINDS = (
     "dagger", "hammer", "spear", "staff",
     # ground: a road or stone tile drawn under everything (no body), for towns and cities
     "path",
+    # terrain: water blocks walking; sand and bridges are ground
+    "water", "sand", "bridge",
+    # enemies that shoot (dark archer, necromancer), a boss, a mimic and rats
+    "marksman", "necromancer", "demon", "mimic", "rat",
 )
-ENEMY_KINDS = ("enemy", "bat", "spider", "ghost", "brute")
+ENEMY_KINDS = ("enemy", "bat", "spider", "ghost", "brute", "marksman", "necromancer", "demon", "mimic", "rat")
 ITEM_KINDS = ("chest", "potion", "sword", "axe", "wand", "bow", "dagger", "hammer", "spear", "staff")
 # 2D characters: friendly people that walk around and talk to the player.
 CHARACTER_KINDS = ("villager", "knight", "wizard")
@@ -29,4 +33,7 @@ MAX_OBJECTS = 1500
 # Same values as the frontend (ScoreCounter.ts and combat.ts): the backend uses
 # them to reject runs that claim more points than the level can give.
 COIN_POINTS = 1
-ENEMY_POINTS = {"enemy": 5, "bat": 3, "spider": 4, "ghost": 6, "brute": 15}
+ENEMY_POINTS = {
+    "enemy": 5, "bat": 3, "spider": 4, "ghost": 6, "brute": 15,
+    "marksman": 7, "necromancer": 9, "demon": 40, "mimic": 8, "rat": 2,
+}
