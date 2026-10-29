@@ -5,8 +5,10 @@ lower limits than the rest of the API. Over the limit the API answers 429 with
 a Retry-After header. One instance only: several instances would each count
 on their own (use a shared store such as Redis if the service is scaled out).
 """
+import ipaddress
 import json
 import math
+import os
 import threading
 import time
 from collections import deque
@@ -82,28 +84,70 @@ class SlidingWindowLimiter:
             self._hits.clear()
 
 
-def client_ip(scope, trusted_proxy_hops: int = 0) -> str:
+# Headers an edge network sets to the visitor's address. On Render the edge is
+# Cloudflare: it overwrites True-Client-IP and refuses requests that bring their
+# own CF-Connecting-IP, so a client cannot fake them there. Off such an edge
+# anybody can send them, so they are only read when trust_edge_header is on.
+EDGE_HEADERS = (b"cf-connecting-ip", b"true-client-ip")
+
+
+def _valid_ip(value: str) -> str | None:
+    try:
+        return str(ipaddress.ip_address(value.strip()))
+    except ValueError:
+        return None
+
+
+def client_ip(scope, trusted_proxy_hops: int = 0, trust_edge_header: bool = False) -> str:
     """The caller's address. Behind a proxy (Render, Nginx) X-Forwarded-For is
-    only trusted for the number of proxies we know are in front of us."""
+    only trusted for the number of proxies we know are in front of us: clients
+    can write anything at its start, so it is read from the end."""
+    headers = scope.get("headers", [])
+    if trust_edge_header:
+        for wanted in EDGE_HEADERS:
+            for name, value in headers:
+                if name == wanted:
+                    ip = _valid_ip(value.decode("latin-1"))
+                    if ip:
+                        return ip
     if trusted_proxy_hops > 0:
-        for name, value in scope.get("headers", []):
+        for name, value in headers:
             if name == b"x-forwarded-for":
                 addresses = [a.strip() for a in value.decode("latin-1").split(",") if a.strip()]
                 if len(addresses) >= trusted_proxy_hops:
-                    return addresses[-trusted_proxy_hops]
+                    ip = _valid_ip(addresses[-trusted_proxy_hops])
+                    if ip:
+                        return ip
     client = scope.get("client")
     return client[0] if client else "unknown"
+
+
+def proxy_settings(environ=None) -> tuple:
+    """(trusted proxy hops, trust the edge header) for this deployment.
+
+    Render sets RENDER=true. There the visitor comes through Cloudflare and two
+    proxies, so X-Forwarded-For ends with "visitor, cloudflare, render" and the
+    edge headers are reliable. Elsewhere nothing is trusted unless configured.
+    """
+    environ = os.environ if environ is None else environ
+    on_render = environ.get("RENDER", "").lower() == "true"
+    hops_value = environ.get("TRUSTED_PROXY_HOPS", "").strip()
+    hops = int(hops_value) if hops_value.isdigit() else (3 if on_render else 0)
+    edge_value = environ.get("TRUST_EDGE_IP_HEADER", "").strip().lower()
+    edge = edge_value in ("1", "true", "yes") if edge_value else on_render
+    return hops, edge
 
 
 class RateLimitMiddleware:
     """ASGI middleware that applies the rules to every HTTP request."""
 
     def __init__(self, app, limiter: SlidingWindowLimiter, rules=DEFAULT_RULES, trusted_proxy_hops: int = 0,
-                 multiplier: int = 1):
+                 multiplier: int = 1, trust_edge_header: bool = False):
         self.app = app
         self.limiter = limiter
         self.rules = rules
         self.trusted_proxy_hops = trusted_proxy_hops
+        self.trust_edge_header = trust_edge_header
         # Only automated test environments raise this (config.py forbids it in production).
         self.multiplier = max(1, multiplier)
 
@@ -118,7 +162,7 @@ class RateLimitMiddleware:
         if scope["type"] != "http" or scope["method"] == "OPTIONS":
             await self.app(scope, receive, send)
             return
-        ip = client_ip(scope, self.trusted_proxy_hops)
+        ip = client_ip(scope, self.trusted_proxy_hops, self.trust_edge_header)
         for rule in self._rules_for(scope["method"], scope["path"]):
             wait = self.limiter.hit(f"{rule.name}:{ip}", rule.limit * self.multiplier, rule.window)
             if wait:

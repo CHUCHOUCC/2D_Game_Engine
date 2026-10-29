@@ -51,7 +51,7 @@ def finish_run(
     try:
         check_run(body, list(project.scene))
     except ImplausibleRunError as error:
-        raise HTTPException(status_code=422, detail=f"Run rejected: {error}")
+        raise HTTPException(status_code=422, detail="Run rejected") from error
     if not plays.finish(play_id, body):
         # Another request finished this run between the check above and now.
         raise HTTPException(status_code=404, detail="Run not found or already finished")

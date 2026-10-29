@@ -101,6 +101,33 @@ def test_forwarded_for_is_trusted_only_behind_known_proxies():
     assert client_ip({"headers": []}) == "unknown"
 
 
+def test_on_render_the_edge_header_names_the_visitor():
+    from app.rate_limit import proxy_settings
+
+    # What Render passes on: whatever the client wrote first, then the visitor, Cloudflare and Render.
+    scope = {"client": ("10.0.0.9", 1), "headers": [
+        (b"x-forwarded-for", b"6.6.6.6, 81.107.0.110, 172.71.1.1, 10.0.0.9"),
+        (b"cf-connecting-ip", b"81.107.0.110"),
+    ]}
+    hops, edge = proxy_settings({"RENDER": "true"})
+    assert (hops, edge) == (3, True)
+    assert client_ip(scope, hops, edge) == "81.107.0.110"
+    # Without the edge header, X-Forwarded-For read from the end gives the same visitor, never the fake 6.6.6.6.
+    assert client_ip(scope, hops, False) == "81.107.0.110"
+
+
+def test_edge_headers_are_ignored_off_render_and_garbage_is_never_a_key():
+    from app.rate_limit import proxy_settings
+
+    scope = {"client": ("10.0.0.1", 1), "headers": [(b"cf-connecting-ip", b"1.2.3.4"), (b"x-forwarded-for", b"not-an-ip")]}
+    hops, edge = proxy_settings({})
+    assert (hops, edge) == (0, False)
+    assert client_ip(scope, hops, edge) == "10.0.0.1"
+    assert client_ip(scope, 1, False) == "10.0.0.1"  # a bad X-Forwarded-For falls back to the socket
+    assert client_ip({"headers": [(b"cf-connecting-ip", b"<script>")], "client": ("10.0.0.1", 1)}, 0, True) == "10.0.0.1"
+    assert proxy_settings({"RENDER": "true", "TRUSTED_PROXY_HOPS": "1", "TRUST_EDGE_IP_HEADER": "0"}) == (1, False)
+
+
 def test_login_is_limited_to_ten_attempts_a_minute():
     service = AuthFixture().service
     app.dependency_overrides[get_auth_service] = lambda: service

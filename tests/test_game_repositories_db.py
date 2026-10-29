@@ -183,3 +183,12 @@ def test_new_enemies_items_and_obstacles_are_seeded(connection):
     assert kinds["chest"]["body_type"] == "static"
     assert kinds["barrel"]["movable"] is True
     assert {"spider", "ghost", "brute"} <= {e["code"] for e in catalog.enemies()}
+
+
+def test_every_table_refuses_rows_to_anyone_but_the_api(connection):
+    """Row level security is on everywhere (migration 091): a hosted Postgres's own
+    REST API (Supabase's anon and authenticated roles) cannot read or write the data."""
+    open_tables = connection.execute(
+        "select tablename from pg_tables where schemaname = 'public' and not rowsecurity"
+    ).fetchall()
+    assert [row["tablename"] for row in open_tables] == []

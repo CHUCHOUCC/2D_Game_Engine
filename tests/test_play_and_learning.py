@@ -181,7 +181,8 @@ def test_a_run_that_does_not_match_the_level_is_rejected():
     for run in rejected:
         response = play(world, run)
         assert response.status_code == 422, run
-        assert response.json()["detail"].startswith("Run rejected")
+        # The reason is not told: a cheater learns nothing about the checks.
+        assert response.json()["detail"] == "Run rejected"
     assert world.plays.scores == []
     assert world.plays.stats == {}
 
