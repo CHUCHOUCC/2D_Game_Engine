@@ -1,6 +1,6 @@
 """Turns the grids in maps/kenney/ into a migration with the ready-made maps.
 
-    python tools/build_maps.py      # writes migrations/088_seed_kenney_maps.sql and 089_seed_city_maps.sql
+    python tools/build_maps.py      # writes the newest map migration (see MIGRATION below)
 
 Each grid is 50 x 30 characters, one per tile of the world (see maps/README.md).
 Before writing, every map is checked: exactly one player, no unknown characters,
@@ -18,65 +18,82 @@ KINDS = {
     "C": "chest", "v": "villager", "k": "knight", "z": "wizard", "e": "enemy", "a": "bat",
     "s": "spider", "O": "brute", "P": "player", "g": "ghost", "c": "coin", "p": "potion",
     "d": "dagger", "h": "hammer", "l": "spear", "t": "staff", "=": "path",
+    "w": "water", "_": "bridge", ":": "sand",
+    "m": "marksman", "n": "necromancer", "D": "demon", "M": "mimic", "r": "rat",
 }
-SOLID = {"wall", "tree", "bush", "fence"}
+SOLID = {"wall", "tree", "bush", "fence", "water"}
 # Things that can stand on a road: when most of their neighbours are road, a
 # road tile is put under them too, so people and coins don't sit on a hole of grass.
 ON_ROAD = {"villager", "knight", "wizard", "enemy", "bat", "spider", "ghost", "brute", "coin", "potion",
-           "chest", "dagger", "hammer", "spear", "staff", "box", "barrel", "player"}
+           "chest", "dagger", "hammer", "spear", "staff", "box", "barrel", "player",
+           "marksman", "necromancer", "demon", "mimic", "rat"}
 
-# Each migration and the maps it seeds. 088 is already applied in production,
-# so new maps go in a new migration instead of changing it.
-MIGRATIONS = {
-    "088_seed_kenney_maps.sql": [
-        ("kenney-dungeon", "dungeon.txt", "Mazmorra (Kenney)",
-         "Mapa de ejemplo del pack Tiny Dungeon de Kenney (CC0): salas, vías y enemigos"),
-        ("kenney-kingdom", "kingdom.txt", "Reino (Kenney)",
-         "Castillo, aldea, río y bosque del 1-Bit Pack de Kenney (CC0); agrega monedas o enemigos"),
-        ("kenney-house", "house.txt", "Casa (Kenney)",
-         "Interior de una casa con sus habitantes, del 1-Bit Pack de Kenney (CC0)"),
-    ],
-    "089_seed_city_maps.sql": [
-        ("kenney-city", "city.txt", "Ciudad (Kenney)",
-         "Una ciudad con calles, aceras, edificios, coches y un parque, del 1-Bit Pack de Kenney (CC0); "
-         "recoge las monedas y limpia las calles de monstruos"),
-        ("kenney-village", "village.txt", "Aldea (Kenney)",
-         "Aldea con casas, lago, bosque, campamento y cementerio, del Roguelike/RPG pack de Kenney (CC0)"),
-    ],
-}
-MAPS = [entry for maps in MIGRATIONS.values() for entry in maps]
+# Migrations are history: once applied in production they never change. 088 and
+# 089 seeded the first maps; the newest migration (MIGRATION) re-seeds every map
+# with "do update", so edit the grids, point MIGRATION at a new number and run this.
+MIGRATION = "090_terrain_enemies_and_maps.sql"
 
-# Kinds added together with the city maps (089): the road tile and four weapons.
-NEW_KINDS_SQL = """-- New kinds: 'path' (road or stone drawn under everything, no body) and the
--- weapons of the newer heroes, which can also be placed as pickups.
+MAPS = [
+    ("kenney-dungeon", "dungeon.txt", "Mazmorra (Kenney)",
+     "Mapa de ejemplo del pack Tiny Dungeon de Kenney (CC0): salas, vías y enemigos"),
+    ("kenney-kingdom", "kingdom.txt", "Reino (Kenney)",
+     "Castillo con foso, río, aldea y bosque del 1-Bit Pack de Kenney (CC0); un demonio guarda el castillo"),
+    ("kenney-house", "house.txt", "Casa (Kenney)",
+     "Interior de una casa con sus habitantes, del 1-Bit Pack de Kenney (CC0)"),
+    ("kenney-city", "city.txt", "Ciudad (Kenney)",
+     "Una ciudad con calles, aceras, edificios, coches, un parque y un lago, del 1-Bit Pack de Kenney (CC0); "
+     "recoge las monedas y limpia las calles de monstruos y arqueros"),
+    ("kenney-village", "village.txt", "Aldea (Kenney)",
+     "Aldea con casas, lago, bosque, campamento y cementerio, del Roguelike/RPG pack de Kenney (CC0); "
+     "un demonio acampa al noreste"),
+]
+
+# Kinds added with this migration: terrain and the enemies that shoot.
+NEW_KINDS_SQL = """-- Terrain ('water' blocks walking; 'sand' and 'bridge' are ground with no body)
+-- and new enemies: two that shoot from afar, a boss, a mimic and rats.
 insert into object_kinds (code, name, category, solid, movable, collectible, hostile) values
-    ('path',   'Camino',  'decoration',  false, false, false, false),
-    ('dagger', 'Dagas',   'collectible', false, false, true,  false),
-    ('hammer', 'Martillo','collectible', false, false, true,  false),
-    ('spear',  'Lanza',   'collectible', false, false, true,  false),
-    ('staff',  'Báculo',  'collectible', false, false, true,  false)
+    ('water',       'Agua',           'obstacle',   true,  false, false, false),
+    ('sand',        'Arena',          'decoration', false, false, false, false),
+    ('bridge',      'Puente',         'decoration', false, false, false, false),
+    ('marksman',    'Arquero oscuro', 'enemy',      true,  true,  false, true),
+    ('necromancer', 'Nigromante',     'enemy',      true,  true,  false, true),
+    ('demon',       'Demonio',        'enemy',      true,  true,  false, true),
+    ('mimic',       'Mímico',         'enemy',      true,  true,  false, true),
+    ('rat',         'Rata',           'enemy',      true,  true,  false, true)
 on conflict (code) do nothing;
 
 insert into object_physics (kind, body_type, material_id, mass, drag, immovable)
 select k.kind, k.body_type, m.id, k.mass, k.drag, k.immovable
 from (values
-    ('path',   'none',   'stone', 1.0, 0, true),
-    ('dagger', 'static', 'metal', 1.0, 0, true),
-    ('hammer', 'static', 'metal', 1.0, 0, true),
-    ('spear',  'static', 'metal', 1.0, 0, true),
-    ('staff',  'static', 'wood',  1.0, 0, true)
+    ('water',       'static',  'stone', 1.0,  0,   true),
+    ('sand',        'none',    'stone', 1.0,  0,   true),
+    ('bridge',      'none',    'wood',  1.0,  0,   true),
+    ('marksman',    'dynamic', 'flesh', 1.5,  200, false),
+    ('necromancer', 'dynamic', 'flesh', 1.5,  200, false),
+    ('demon',       'dynamic', 'flesh', 12.0, 300, false),
+    ('mimic',       'dynamic', 'wood',  1.5,  200, false),
+    ('rat',         'dynamic', 'flesh', 0.5,  100, false)
 ) as k (kind, body_type, material, mass, drag, immovable)
 join physics_materials m on m.code = k.material
 on conflict (kind) do nothing;
 
 insert into textures (pack_id, code, kind, file_path, width, height, frames)
-select p.id, t.code, t.kind, 'textures/' || t.code || '.png', 32, 32, 1
+select p.id, t.code, t.kind, 'textures/' || t.code || '.png', t.size, t.size, 1
 from texture_packs p
 cross join (values
-    ('path', 'path'), ('dagger', 'dagger'), ('hammer', 'hammer'), ('spear', 'spear'), ('staff', 'staff')
-) as t (code, kind)
+    ('water', 'water', 32), ('sand', 'sand', 32), ('bridge', 'bridge', 32), ('marksman', 'marksman', 32),
+    ('necromancer', 'necromancer', 32), ('demon', 'demon', 32), ('mimic', 'mimic', 32), ('rat', 'rat', 32)
+) as t (code, kind, size)
 where p.code = 'kenney-tiny'
 on conflict (pack_id, code) do nothing;
+
+insert into enemy_types (code, name, health, speed, damage, behavior, texture_code) values
+    ('marksman',    'Arquero oscuro', 3,  75,  1, 'patrol', 'marksman'),
+    ('necromancer', 'Nigromante',     4,  55,  1, 'patrol', 'necromancer'),
+    ('demon',       'Demonio',        30, 55,  2, 'chase',  'demon'),
+    ('mimic',       'Mímico',         5,  140, 2, 'idle',   'mimic'),
+    ('rat',         'Rata',           1,  150, 1, 'chase',  'rat')
+on conflict (code) do nothing;
 
 """
 
@@ -137,24 +154,25 @@ def sql_text(value: str) -> str:
 
 
 def main() -> None:
-    for file_name, maps in MIGRATIONS.items():
-        values = []
-        for code, grid_name, name, description in maps:
-            rows = read_grid(ROOT / "maps" / "kenney" / grid_name)
-            check(code, rows)
-            scene = scene_of(rows)
-            assert len(scene) <= MAX_OBJECTS, f"{code}: {len(scene)} objects, at most {MAX_OBJECTS}"
-            print(f"{code:15} {len(scene):4} objects")
-            values.append(f"    ({sql_text(code)}, {sql_text(name)}, {sql_text(description)},\n"
-                          f"     {sql_text(json.dumps(scene, separators=(',', ':')))}::jsonb)")
-        sql = ("-- Ready-made maps: Kenney's sample maps (CC0), see maps/README.md.\n"
-               "-- Generated by tools/build_maps.py from maps/kenney/*.txt; do not edit by hand.\n"
-               + (NEW_KINDS_SQL if file_name.startswith("089") else "")
-               + "insert into level_templates (code, name, description, scene) values\n"
-               + ",\n".join(values) + "\non conflict (code) do nothing;\n")
-        out = ROOT / "migrations" / file_name
-        out.write_text(sql, encoding="utf-8")
-        print(f"wrote {out.relative_to(ROOT)}")
+    values = []
+    for code, grid_name, name, description in MAPS:
+        rows = read_grid(ROOT / "maps" / "kenney" / grid_name)
+        check(code, rows)
+        scene = scene_of(rows)
+        assert len(scene) <= MAX_OBJECTS, f"{code}: {len(scene)} objects, at most {MAX_OBJECTS}"
+        print(f"{code:15} {len(scene):4} objects")
+        values.append(f"    ({sql_text(code)}, {sql_text(name)}, {sql_text(description)},\n"
+                      f"     {sql_text(json.dumps(scene, separators=(',', ':')))}::jsonb)")
+    sql = ("-- Ready-made maps: Kenney's sample maps (CC0), see maps/README.md.\n"
+           "-- Generated by tools/build_maps.py from maps/kenney/*.txt; do not edit by hand.\n"
+           + NEW_KINDS_SQL
+           + "insert into level_templates (code, name, description, scene) values\n"
+           + ",\n".join(values)
+           + "\non conflict (code) do update\n"
+           + "    set name = excluded.name, description = excluded.description, scene = excluded.scene;\n")
+    out = ROOT / "migrations" / MIGRATION
+    out.write_text(sql, encoding="utf-8")
+    print(f"wrote {out.relative_to(ROOT)}")
 
 
 if __name__ == "__main__":
