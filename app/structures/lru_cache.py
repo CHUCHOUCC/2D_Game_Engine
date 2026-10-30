@@ -146,7 +146,7 @@ class LRUCache:
             out = []
             entry = self._head.next
             while entry is not self._tail:
-                out = out + [entry.key]
+                out.append(entry.key)
                 entry = entry.next
             return out
 
