@@ -44,3 +44,29 @@ def test_settings_need_a_token():
     client, _ = make_client()
     del app.dependency_overrides[current_user]
     assert client.get("/me/settings").status_code == 401
+
+
+def test_settings_are_read_from_the_database_once_and_updated_on_save():
+    client, repo = make_client()
+    calls = {"n": 0}
+    original = repo.get
+
+    def counting(user_id):
+        calls["n"] += 1
+        return original(user_id)
+
+    repo.get = counting
+    client.get("/me/settings")
+    client.get("/me/settings")
+    assert calls["n"] == 1
+    client.put("/me/settings", json={"theme": "light"})
+    # Write-through: the next read already sees the change, without a new query.
+    assert client.get("/me/settings").json()["theme"] == "light"
+    assert calls["n"] == 1
+
+
+def test_each_user_has_their_own_cached_settings():
+    client, _ = make_client()
+    client.put("/me/settings", json={"theme": "light"})
+    app.dependency_overrides[current_user] = lambda: User(2, "k", "k@example.com", b"s", b"h")
+    assert client.get("/me/settings").json()["theme"] == "dark"

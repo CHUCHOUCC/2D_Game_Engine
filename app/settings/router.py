@@ -5,6 +5,7 @@ from pydantic import BaseModel, Field
 
 from app.auth.dependencies import current_user
 from app.auth.user import User
+from app.cache import settings_cache
 from app.database import database_connection
 from .repository import SettingsRepository
 
@@ -29,10 +30,14 @@ def get_settings_repository(connection=Depends(database_connection)) -> Settings
 
 @router.get("")
 def read_settings(repo: SettingsRepository = Depends(get_settings_repository), user: User = Depends(current_user)):
-    return repo.get(user.id)
+    # The editor reads them on every start; they only change when this user saves them.
+    return dict(settings_cache.get_or_load(user.id, lambda: repo.get(user.id)))
 
 
 @router.put("")
 def save_settings(body: SettingsIn, repo: SettingsRepository = Depends(get_settings_repository),
                   user: User = Depends(current_user)):
-    return repo.save(user.id, body.model_dump())
+    saved = repo.save(user.id, body.model_dump())
+    # Write-through: the cache holds the new values right away, never the old ones.
+    settings_cache.put(user.id, dict(saved))
+    return saved

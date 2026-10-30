@@ -258,3 +258,31 @@ def test_every_save_creates_a_version_and_a_version_can_be_restored():
     assert restored.status_code == 200
     assert restored.json()["scene"] == [{"id": "a", "kind": "box", "x": 1.0, "y": 1.0}]
     assert client.post(f"/projects/{project_id}/versions/99/restore").status_code == 404
+
+
+def test_templates_are_read_once_and_shared_with_project_creation():
+    client, repo = make_client()
+    calls = {"n": 0}
+    original = repo.list_templates
+
+    def counting():
+        calls["n"] += 1
+        return original()
+
+    repo.list_templates = counting
+    client.get("/projects/templates")
+    client.get("/projects/templates")
+    created = client.post("/projects", json={"name": "town", "template": "village"}).json()
+    assert calls["n"] == 1
+    # The project gets its own copy: editing it never changes the cached template.
+    client.put(f"/projects/{created['id']}/scene", json={"scene": []})
+    assert client.get("/projects/templates").json()[0]["object_count"] == 1
+
+
+def test_templates_are_private_and_revalidated():
+    client, _ = make_client()
+    first = client.get("/projects/templates")
+    assert first.headers["cache-control"].startswith("private")
+    assert "Authorization" in first.headers["vary"]
+    again = client.get("/projects/templates", headers={"If-None-Match": first.headers["etag"]})
+    assert again.status_code == 304
