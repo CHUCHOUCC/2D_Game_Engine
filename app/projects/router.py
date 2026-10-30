@@ -1,11 +1,14 @@
 import os
 
-from fastapi import APIRouter, Depends, HTTPException, Response
+import copy
+
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import ValidationError
 
 from app.ai_client import AiServiceClient, AiServiceError
 from app.auth.dependencies import current_user
 from app.auth.user import User
+from app.cache import PRIVATE, cached_json, reference_cache
 from app.database import database_connection
 from .repository import ProjectRepository
 from .schemas import AiRequest, GameObjectIn, ProjectCreate, ProjectRename, SceneUpdate
@@ -53,17 +56,31 @@ def load_project(project_id: int, repo, owner_id: int):
     return project
 
 
+def cached_templates(repo) -> list:
+    """Starter scenes, kept in memory: they only change with a migration."""
+    return reference_cache.get_or_load("projects:templates", lambda: [dict(row) for row in repo.list_templates()])
+
+
+def template_scene(repo, code: str):
+    """Scene of a template from the cached list (a deep copy: the new project must not share it)."""
+    for template in cached_templates(repo):
+        if template["code"] == code:
+            return copy.deepcopy(template["scene"])
+    return None
+
+
 @router.get("/templates")
-def list_templates(repo=Depends(get_repository), owner_id: int = Depends(current_owner_id)):
+def list_templates(request: Request, repo=Depends(get_repository), owner_id: int = Depends(current_owner_id)):
     """Starter scenes a new project can be created from."""
-    return [dict(row) for row in repo.list_templates()]
+    # Only for logged-in users: the browser may keep it, shared caches may not.
+    return cached_json(request, cached_templates(repo), PRIVATE)
 
 
 @router.post("", status_code=201)
 def create_project(body: ProjectCreate, repo=Depends(get_repository), owner_id: int = Depends(current_owner_id)):
     scene = []
     if body.template:
-        scene = repo.template_scene(body.template)
+        scene = template_scene(repo, body.template)
         if scene is None:
             raise HTTPException(status_code=422, detail="Unknown template")
     return project_json(repo.create(owner_id, body.name, scene))
