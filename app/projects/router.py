@@ -115,9 +115,9 @@ def delete_project(project_id: int, repo=Depends(get_repository), owner_id: int 
 
 @router.post("/{project_id}/duplicate", status_code=201)
 def duplicate_project(project_id: int, repo=Depends(get_repository), owner_id: int = Depends(current_owner_id)):
-    """Clone a project: same scene, name with ' (copia)' appended."""
+    """Clone a project: same scene, name with ' (copy)' appended."""
     original = load_project(project_id, repo, owner_id)
-    suffix = " (copia)"
+    suffix = " (copy)"
     name = f"{original.name[:PROJECT_NAME_MAX - len(suffix)].rstrip()}{suffix}"
     return project_json(repo.create(owner_id, name, list(original.scene)))
 
@@ -151,7 +151,7 @@ def restore_version(project_id: int, version_number: int, repo=Depends(get_repos
     if scene is None:
         raise HTTPException(status_code=404, detail="Version not found")
     project = repo.update_scene(project_id, owner_id, scene)
-    repo.save_version(project_id, owner_id, scene, f"Restaurada la version {version_number}")
+    repo.save_version(project_id, owner_id, scene, f"Restored version {version_number}")
     return project_json(project)
 
 

@@ -239,7 +239,7 @@ def test_duplicate_project_copies_the_scene_with_a_new_id():
     copy = client.post(f"/projects/{project_id}/duplicate")
     assert copy.status_code == 201
     assert copy.json()["id"] != project_id
-    assert copy.json()["name"] == "level (copia)"
+    assert copy.json()["name"] == "level (copy)"
     assert copy.json()["scene"] == [{"id": "a", "kind": "wall", "x": 10.0, "y": 10.0}]
 
 
