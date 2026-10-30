@@ -11,8 +11,9 @@ import math
 import os
 import threading
 import time
-from collections import deque
 from dataclasses import dataclass
+
+from app.structures import Queue
 
 
 @dataclass(frozen=True)
@@ -65,17 +66,17 @@ class SlidingWindowLimiter:
             self._calls += 1
             if self._calls % self.SWEEP_EVERY == 0:
                 self._sweep(now)
-            hits = self._hits.setdefault(key, deque())
-            while hits and hits[0] <= now - window:
-                hits.popleft()
+            hits = self._hits.setdefault(key, Queue())
+            while not hits.is_empty() and hits.front() <= now - window:
+                hits.dequeue()
             if len(hits) >= limit:
-                return max(0.0, hits[0] + window - now)
-            hits.append(now)
+                return max(0.0, hits.front() + window - now)
+            hits.enqueue(now)
             return 0.0
 
     def _sweep(self, now: float) -> None:
         """Drop the keys whose newest request is older than the longest window."""
-        for key in [k for k, hits in self._hits.items() if not hits or hits[-1] <= now - self._longest_window]:
+        for key in [k for k, hits in self._hits.items() if hits.is_empty() or hits.rear() <= now - self._longest_window]:
             del self._hits[key]
 
     def size(self) -> int:
