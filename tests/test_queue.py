@@ -58,3 +58,15 @@ def test_enqueue_again_after_emptying_works():
 def test_dequeue_on_empty_queue_follows_an_explicit_rule():
     with pytest.raises(EmptyQueueError):
         Queue().dequeue()
+
+
+def test_size_follows_enqueue_and_dequeue():
+    line = Queue()
+    assert line.size() == 0 and len(line) == 0
+    line.enqueue("a")
+    line.enqueue("b")
+    assert line.size() == 2
+    line.dequeue()
+    assert len(line) == 1
+    line.dequeue()
+    assert line.size() == 0 and line.is_empty()
