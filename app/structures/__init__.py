@@ -1,3 +1,4 @@
+from .lru_cache import LRUCache
 from .node import Node
 from .queue import EmptyQueueError, Queue
 from .stack import EmptyStackError, Stack
@@ -8,6 +9,7 @@ __all__ = [
     "EmptyStackError",
     "ExpressionError",
     "ExpressionNode",
+    "LRUCache",
     "Node",
     "NumberNode",
     "OperationNode",
