@@ -32,6 +32,7 @@ Open http://127.0.0.1:8000/health (`{"ok": true}`) and http://127.0.0.1:8000/hea
 | `app/structures/stack.py` | 3, position stack | LIFO, top, undo; O(1) |
 | `app/structures/queue.py` | 4, event queue | FIFO with front and rear; O(1) |
 | `app/structures/tree.py` | 5, expression tree | postorder traversal; O(n) |
+| `app/structures/lru_cache.py` | cache | hash index + doubly linked list, least recently used out; O(1) |
 | `app/domain/score_counter.py` | 1, score counter | rule for each event |
 
 Each file documents its invariant, its costs and what happens when the structure is empty.
@@ -51,6 +52,12 @@ for every table and for running the SQL tests on a throw-away PostgreSQL.
 
 JWT access tokens (15 min), rotating refresh tokens (7 days, reuse detection) and signed service
 tokens between the backend and the AI service. See [docs/tokens.md](docs/tokens.md).
+
+## Cache
+
+Catalog, starter templates and each user's settings are kept in memory (`LRUCache`, hand-written);
+the catalog and templates also carry an `ETag`, so the browser gets a 304 when nothing changed.
+See [docs/cache.md](docs/cache.md).
 
 ## Security
 
