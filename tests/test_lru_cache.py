@@ -130,3 +130,36 @@ def test_concurrent_access_keeps_the_size_limit():
         t.join()
     assert len(cache) <= 50
     assert len(cache.keys()) == len(cache)
+
+
+def test_lazy_connection_opens_only_when_used():
+    from app.database import LazyConnection
+
+    opened = {"n": 0}
+
+    class FakeConnection:
+        def execute(self, sql, params=None):
+            return sql
+
+        def commit(self):
+            opened["committed"] = True
+
+        def rollback(self):
+            opened["rolled_back"] = True
+
+        def close(self):
+            opened["closed"] = True
+
+    def factory():
+        opened["n"] += 1
+        return FakeConnection()
+
+    idle = LazyConnection(factory)
+    idle.finish(failed=False)
+    assert opened["n"] == 0 and not idle.opened
+
+    used = LazyConnection(factory)
+    assert used.execute("select 1") == "select 1"
+    used.execute("select 2")
+    used.finish(failed=False)
+    assert opened == {"n": 1, "committed": True, "closed": True}
