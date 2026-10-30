@@ -34,6 +34,13 @@ Open http://127.0.0.1:8000/health (`{"ok": true}`) and http://127.0.0.1:8000/hea
 | `app/structures/tree.py` | 5, expression tree | postorder traversal; O(n) |
 | `app/structures/lru_cache.py` | cache | hash index + doubly linked list, least recently used out; O(1) |
 | `app/domain/score_counter.py` | 1, score counter | rule for each event |
+| `app/structures/linked_list.py` | singly linked list | head and tail, add / add_first O(1) |
+| `app/structures/doubly_linked_list.py` | doubly linked list | insert and remove at both ends O(1) |
+| `app/structures/circular_linked_list.py` | circular linked list | the tail points back to the head |
+| `app/structures/dynamic_array.py` | array | fixed memory block that doubles; used by `app/domain/scene.py` for the objects of a project |
+| `app/structures/general_tree.py` | general tree | preorder, level order, height |
+
+The rate limiter (`app/rate_limit.py`) keeps the request times of each client in our own `Queue`; the objects of a scene live in `Scene` (`app/domain/scene.py`), built on `DynamicArray`.
 
 Each file documents its invariant, its costs and what happens when the structure is empty.
 
