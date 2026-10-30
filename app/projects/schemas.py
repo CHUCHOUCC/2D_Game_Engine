@@ -2,6 +2,8 @@ from typing import List, Literal
 
 from pydantic import BaseModel, Field, field_validator
 
+from app.domain import Scene
+
 from .world import MAX_OBJECTS, OBJECT_KINDS, WORLD_HEIGHT, WORLD_WIDTH
 
 ObjectKind = Literal[OBJECT_KINDS]
@@ -45,10 +47,10 @@ class SceneUpdate(BaseModel):
     @field_validator("scene")
     @classmethod
     def ids_are_unique_and_one_player(cls, scene):
-        ids = [obj.id for obj in scene]
-        if len(ids) != len(set(ids)):
+        checked = Scene(obj.model_dump() for obj in scene)
+        if not checked.has_unique_ids():
             raise ValueError("object ids must be unique")
-        if sum(1 for obj in scene if obj.kind == "player") > 1:
+        if checked.count_kind("player") > 1:
             raise ValueError("a scene can have only one player")
         return scene
 
