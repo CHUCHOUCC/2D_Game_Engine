@@ -227,7 +227,7 @@ def add_objects_with_ai(
     try:
         generated, removed = ai_client.edit(body.prompt, list(project.scene))
     except AiServiceError as error:
-        raise HTTPException(status_code=502, detail="La IA no respondió, inténtalo de nuevo") from error
+        raise HTTPException(status_code=502, detail="The AI did not answer, try again") from error
     added = validate_generated(generated)
     gone = set(removed) & {obj["id"] for obj in project.scene}
     kept = [obj for obj in project.scene if obj["id"] not in gone]
