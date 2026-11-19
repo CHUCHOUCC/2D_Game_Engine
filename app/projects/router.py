@@ -1,6 +1,6 @@
-import os
-
 import copy
+import os
+from types import SimpleNamespace
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import ValidationError
@@ -11,7 +11,7 @@ from app.auth.user import User
 from app.cache import PRIVATE, cached_json, reference_cache
 from app.database import database_connection
 from .repository import ProjectRepository
-from .schemas import AiRequest, GameObjectIn, ProjectCreate, ProjectRename, SceneUpdate
+from .schemas import PROJECT_NAME_MAX, AiRequest, GameObjectIn, ProjectCreate, ProjectRename, SceneUpdate
 from .world import MAX_OBJECTS
 
 router = APIRouter(prefix="/projects", tags=["projects"])
@@ -116,14 +116,16 @@ def delete_project(project_id: int, repo=Depends(get_repository), owner_id: int 
 def duplicate_project(project_id: int, repo=Depends(get_repository), owner_id: int = Depends(current_owner_id)):
     """Clone a project: same scene, name with ' (copia)' appended."""
     original = load_project(project_id, repo, owner_id)
-    name = f"{original.name} (copia)"[:100]
+    suffix = " (copia)"
+    name = f"{original.name[:PROJECT_NAME_MAX - len(suffix)].rstrip()}{suffix}"
     return project_json(repo.create(owner_id, name, list(original.scene)))
 
 
 @router.put("/{project_id}/scene")
 def save_scene(project_id: int, body: SceneUpdate, repo=Depends(get_repository),
                owner_id: int = Depends(current_owner_id)):
-    scene = [obj.model_dump() for obj in body.scene]
+    scene = [_compact(obj.model_dump()) for obj in body.scene]
+    check_variants(scene, repo, owner_id)
     project = repo.update_scene(project_id, owner_id, scene)
     if project is None:
         raise _not_found()
@@ -152,6 +154,25 @@ def restore_version(project_id: int, version_number: int, repo=Depends(get_repos
     return project_json(project)
 
 
+def _compact(obj: dict) -> dict:
+    """Objects without a creation are stored as before, with no 'variant' key."""
+    if obj.get("variant") is None:
+        obj.pop("variant", None)
+    return obj
+
+
+def check_variants(scene: list, repo, owner_id: int) -> None:
+    """Every creation an object points to must be the owner's and match its kind."""
+    wanted = {obj["variant"] for obj in scene if obj.get("variant") is not None}
+    if not wanted:
+        return
+    owned = repo.creation_kinds(owner_id, sorted(wanted))
+    for obj in scene:
+        variant = obj.get("variant")
+        if variant is not None and owned.get(variant) != obj["kind"]:
+            raise HTTPException(status_code=422, detail="Una creación del mapa no existe o no es tuya")
+
+
 def with_unique_ids(existing: list, new: list) -> list:
     """Give each new object an id that is not used yet in the scene."""
     used = {obj["id"] for obj in existing}
@@ -172,7 +193,7 @@ def validate_generated(objects: list) -> list:
     The AI may not add a second player: extra 'player' objects are dropped.
     """
     try:
-        validated = [GameObjectIn(**obj).model_dump() for obj in objects]
+        validated = [_compact({**GameObjectIn(**obj).model_dump(), "variant": None}) for obj in objects]
     except (ValidationError, TypeError):
         raise HTTPException(status_code=502, detail="AI service returned invalid objects")
     return [obj for obj in validated if obj["kind"] != "player"]
@@ -193,12 +214,23 @@ def add_objects_with_ai(
     owner_id: int = Depends(current_owner_id),
     ai_client: AiServiceClient = Depends(get_ai_client),
 ):
-    """Ask the AI service for new objects and add them to the project's scene."""
+    """Apply a natural-language request to the scene: remove what it asks to remove, then add.
+
+    "borra los enemigos", "elimina todo y pon 5 tanques": the AI service says which objects go
+    (only ids that really are in the scene count) and which new ones come. The previous scene
+    is kept as a version, so the change can be undone from the project's history.
+    """
     project = load_project(project_id, repo, owner_id)
     repo.commit()  # do not hold the database while the AI answers
     try:
-        generated = ai_client.generate(body.prompt, list(project.scene))
+        generated, removed = ai_client.edit(body.prompt, list(project.scene))
     except AiServiceError as error:
         raise HTTPException(status_code=502, detail="La IA no respondió, inténtalo de nuevo") from error
-    scene = append_objects(project, validate_generated(generated))
-    return project_json(repo.update_scene(project_id, owner_id, scene))
+    added = validate_generated(generated)
+    gone = set(removed) & {obj["id"] for obj in project.scene}
+    kept = [obj for obj in project.scene if obj["id"] not in gone]
+    if gone:
+        repo.save_version(project_id, owner_id, list(project.scene), "Antes de que la IA borrara objetos")
+    scene = append_objects(SimpleNamespace(scene=kept), added)
+    updated = repo.update_scene(project_id, owner_id, scene)
+    return {**project_json(updated), "ai": {"added": len(added), "removed": len(gone)}}

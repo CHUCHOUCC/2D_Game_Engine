@@ -73,6 +73,12 @@ class FakeAiModelRepository:
                                    "version": current["version"] + 1}
         return project_id
 
+    def set_difficulty(self, project_id, difficulty):
+        current = self.get(project_id)
+        self.models[project_id] = {**current, "id": project_id,
+                                   "parameters": {**current["parameters"], "difficulty": difficulty},
+                                   "version": current["version"] + 1}
+
     def add_sample(self, model_id, play_id, features, reward):
         self.samples.append((model_id, play_id, reward))
 
@@ -121,6 +127,9 @@ class FakeLearningAi:
         self.obstacle_calls.append((model, len(scene), count))
         objects = [{"id": f"wall-{i}", "kind": "wall", "x": 100 + 32 * i, "y": 200} for i in range(count)]
         return {"objects": objects, "difficulty": model.get("difficulty", DEFAULT_DIFFICULTY)}
+
+    def edit(self, prompt, scene=None):
+        return self.generate(prompt, scene), []
 
     def generate(self, prompt, scene=None):
         self._maybe_fail()

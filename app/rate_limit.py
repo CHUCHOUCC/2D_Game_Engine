@@ -33,7 +33,11 @@ DEFAULT_RULES = (
     Rule("register", "/auth/register", 5, 60),
     Rule("login", "/auth/login", 10, 60),
     Rule("refresh", "/auth/refresh", 30, 60),
+    # One challenge per account request; generous for retries, but not a free RSA workload.
+    Rule("challenge", "/auth/challenge", 60, 60, methods=("GET",)),
     Rule("password", "/auth/password", 5, 300),
+    # Every picture goes through the full security check (sprite_scan.py): few per minute.
+    Rule("sprites", "/me/sprites", 10, 60),
     Rule("ai", "/projects/", 20, 60),  # only paths that contain /ai, see _rules_for
     Rule("global", "/", 300, 60, methods=()),
 )

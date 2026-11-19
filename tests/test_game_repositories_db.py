@@ -116,6 +116,18 @@ def test_ai_model_upsert_and_samples(connection, user, project):
     models.record_generation(request_id, [{"id": "w", "kind": "wall", "x": 1, "y": 1}], 0.7)
 
 
+def test_choosing_a_difficulty_keeps_the_learned_parameters(connection, user, project):
+    models = AiModelRepository(connection)
+    models.set_difficulty(project.id, 0.2)  # no model yet: created with no samples
+    assert (models.get(project.id)["samples_seen"], difficulty_of(models.get(project.id))) == (0, 0.2)
+    models.save(project.id, {"difficulty": 0.5, "spread": 0.3})
+    models.set_difficulty(project.id, 0.95)
+    model = models.get(project.id)
+    assert difficulty_of(model) == 0.95
+    assert model["parameters"]["spread"] == 0.3
+    assert model["samples_seen"] == 1
+
+
 def test_settings_default_then_saved(connection, user):
     repo = SettingsRepository(connection)
     assert repo.get(user.id) == DEFAULTS
@@ -164,13 +176,13 @@ def test_maintenance_purge_runs_on_the_real_schema(connection):
 def test_characters_are_seeded_with_physics_textures_and_lines(connection):
     catalog = CatalogRepository(connection)
     kinds = {row["code"]: row for row in catalog.kinds()}
-    for code in ("villager", "knight", "wizard"):
+    for code in ("villager", "knight", "wizard", "ally", "guard"):
         assert kinds[code]["category"] == "character"
         assert kinds[code]["body_type"] == "dynamic"
         assert kinds[code]["hostile"] is False
-    assert {t["code"] for t in catalog.textures()} >= {"villager", "knight", "wizard"}
+    assert {t["code"] for t in catalog.textures()} >= {"villager", "knight", "wizard", "ally", "guard"}
     said = {row["kind"] for row in catalog.character_lines()}
-    assert said == {"villager", "knight", "wizard"}
+    assert said == {"villager", "knight", "wizard", "ally", "guard"}
 
 
 def test_new_enemies_items_and_obstacles_are_seeded(connection):
@@ -192,3 +204,53 @@ def test_every_table_refuses_rows_to_anyone_but_the_api(connection):
         "select tablename from pg_tables where schemaname = 'public' and not rowsecurity"
     ).fetchall()
     assert [row["tablename"] for row in open_tables] == []
+
+
+def test_admin_balance_and_creations_round_trip(connection, user):
+    from app.admin.repository import AdminRepository
+    admin = AdminRepository(connection)
+    assert admin.balance(user.id) == {"heroes": {}, "enemies": {}}
+    saved = admin.save_balance(user.id, {"knight": {"health": 9, "damage": 3}}, {"brute": {"health": 20, "damage": 4}})
+    assert admin.balance(user.id) == saved
+    values = {"category": "enemy", "base_kind": "brute", "name": "Ogro de hielo", "tint": "#7fd4ff",
+              "health": 12, "damage": 3, "speed": 50, "value": 0}
+    orc = admin.create(user.id, values)
+    assert admin.count(user.id) == 1
+    assert admin.update(user.id, orc["id"], {**values, "name": "Ogro de fuego"})["name"] == "Ogro de fuego"
+    assert ProjectRepository(connection).creation_kinds(user.id, [orc["id"], 999999]) == {orc["id"]: "brute"}
+    other = UserRepository(connection).create("other-admin", "other-admin@example.com", b"\x01" * 16, b"\x02" * 64)
+    assert admin.creations(other.id) == []
+    assert admin.update(other.id, orc["id"], values) is None
+    assert admin.delete(other.id, orc["id"]) is False
+    assert ProjectRepository(connection).creation_kinds(other.id, [orc["id"]]) == {}
+    assert admin.delete(user.id, orc["id"]) is True
+    assert admin.creations(user.id) == []
+
+
+def test_a_scene_object_keeps_its_creation(connection, user):
+    from app.admin.repository import AdminRepository
+    orc = AdminRepository(connection).create(user.id, {"category": "enemy", "base_kind": "brute", "name": "Ogro",
+                                                       "tint": "#ffffff", "health": 9, "damage": 2, "speed": 40, "value": 0})
+    repo = ProjectRepository(connection)
+    created = repo.create(user.id, "lvl", [])
+    updated = repo.update_scene(created.id, user.id, [{"id": "o", "kind": "brute", "x": 5, "y": 5, "variant": orc["id"]}])
+    assert updated.scene[0]["variant"] == orc["id"]
+
+
+def test_pictures_belong_to_one_account_and_creations_fall_back_when_deleted(connection, user):
+    from app.admin.repository import AdminRepository
+    from app.admin.sprite_scan import _write_png
+    admin = AdminRepository(connection)
+    png = _write_png(b"\xff\x00\x00\xff" * 64, 8, 8)
+    sprite = admin.add_sprite(user.id, "Mi dragon", png, 8, 8, "a" * 64)
+    again = admin.add_sprite(user.id, "Dragon rojo", png, 8, 8, "a" * 64)
+    assert again["id"] == sprite["id"] and admin.sprite_count(user.id) == 1  # same picture, kept once
+    assert bytes(admin.sprites(user.id)[0]["png"]) == png
+    other = UserRepository(connection).create("other-sprites", "other-sprites@example.com", b"\x01" * 16, b"\x02" * 64)
+    assert admin.sprites(other.id) == [] and not admin.owns_sprite(other.id, sprite["id"])
+    assert admin.delete_sprite(other.id, sprite["id"]) is False
+    dragon = admin.create(user.id, {"category": "enemy", "base_kind": "brute", "name": "Dragon", "tint": "#ffffff",
+                                    "health": 9, "damage": 2, "speed": 40, "value": 0, "sprite_id": sprite["id"]})
+    assert dragon["sprite_id"] == sprite["id"]
+    assert admin.delete_sprite(user.id, sprite["id"]) is True
+    assert admin.creations(user.id)[0]["sprite_id"] is None  # back to the drawing of its base
