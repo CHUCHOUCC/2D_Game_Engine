@@ -21,6 +21,13 @@ class Queue:
     def __init__(self):
         self._front = None
         self._rear = None
+        self._size = 0
+
+    def size(self):
+        return self._size
+
+    def __len__(self):
+        return self._size
 
     def is_empty(self):
         return self._front is None
@@ -33,12 +40,14 @@ class Queue:
         else:
             self._rear.next = new_node
         self._rear = new_node
+        self._size += 1
 
     def dequeue(self):
         if self._front is None:
             raise EmptyQueueError("Cannot dequeue: the queue is empty")
         data = self._front.data
         self._front = self._front.next
+        self._size -= 1
         if self._front is None:
             # The last element was removed: the rear must be cleared as well.
             self._rear = None

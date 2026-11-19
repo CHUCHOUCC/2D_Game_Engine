@@ -8,6 +8,7 @@ from pydantic import ValidationError
 from app.ai_client import AiServiceClient, AiServiceError
 from app.auth.dependencies import current_user
 from app.auth.user import User
+from app.domain import Scene, SceneFullError
 from app.cache import PRIVATE, cached_json, reference_cache
 from app.database import database_connection
 from .repository import ProjectRepository
@@ -114,9 +115,9 @@ def delete_project(project_id: int, repo=Depends(get_repository), owner_id: int 
 
 @router.post("/{project_id}/duplicate", status_code=201)
 def duplicate_project(project_id: int, repo=Depends(get_repository), owner_id: int = Depends(current_owner_id)):
-    """Clone a project: same scene, name with ' (copia)' appended."""
+    """Clone a project: same scene, name with ' (copy)' appended."""
     original = load_project(project_id, repo, owner_id)
-    suffix = " (copia)"
+    suffix = " (copy)"
     name = f"{original.name[:PROJECT_NAME_MAX - len(suffix)].rstrip()}{suffix}"
     return project_json(repo.create(owner_id, name, list(original.scene)))
 
@@ -150,7 +151,7 @@ def restore_version(project_id: int, version_number: int, repo=Depends(get_repos
     if scene is None:
         raise HTTPException(status_code=404, detail="Version not found")
     project = repo.update_scene(project_id, owner_id, scene)
-    repo.save_version(project_id, owner_id, scene, f"Restaurada la version {version_number}")
+    repo.save_version(project_id, owner_id, scene, f"Restored version {version_number}")
     return project_json(project)
 
 
@@ -175,15 +176,13 @@ def check_variants(scene: list, repo, owner_id: int) -> None:
 
 def with_unique_ids(existing: list, new: list) -> list:
     """Give each new object an id that is not used yet in the scene."""
-    used = {obj["id"] for obj in existing}
+    scene = Scene(existing)
     result = []
     for obj in new:
-        candidate, n = obj["id"], 1
-        while candidate in used:
-            n += 1
-            candidate = f"{obj['id']}-{n}"
-        used.add(candidate)
-        result.append({**obj, "id": candidate})
+        object_id = scene.free_id(obj["id"])
+        renamed = {**obj, "id": object_id}
+        scene.add(renamed)
+        result.append(renamed)
     return result
 
 
@@ -200,10 +199,13 @@ def validate_generated(objects: list) -> list:
 
 
 def append_objects(project, new_objects: list) -> list:
-    scene = list(project.scene) + with_unique_ids(project.scene, new_objects)
-    if len(scene) > MAX_OBJECTS:
-        raise HTTPException(status_code=422, detail=f"A scene can have at most {MAX_OBJECTS} objects")
-    return scene
+    try:
+        scene = Scene(project.scene)
+        for obj in with_unique_ids(project.scene, new_objects):
+            scene.add(obj)
+    except SceneFullError as error:
+        raise HTTPException(status_code=422, detail=f"A scene can have at most {MAX_OBJECTS} objects") from error
+    return scene.to_list()
 
 
 @router.post("/{project_id}/ai")
@@ -225,7 +227,7 @@ def add_objects_with_ai(
     try:
         generated, removed = ai_client.edit(body.prompt, list(project.scene))
     except AiServiceError as error:
-        raise HTTPException(status_code=502, detail="La IA no respondió, inténtalo de nuevo") from error
+        raise HTTPException(status_code=502, detail="The AI did not answer, try again") from error
     added = validate_generated(generated)
     gone = set(removed) & {obj["id"] for obj in project.scene}
     kept = [obj for obj in project.scene if obj["id"] not in gone]

@@ -82,3 +82,25 @@ def test_remove_returns_false_when_nothing_matches():
 
 def test_iteration_follows_insertion_order():
     assert list(build("a", "b", "c")) == ["a", "b", "c"]
+
+def test_add_first_goes_before_everything():
+    items = LinkedList()
+    items.add("b")
+    items.add_first("a")
+    assert list(items) == ["a", "b"]
+
+
+def test_add_first_on_an_empty_list_sets_the_tail():
+    items = LinkedList()
+    items.add_first("a")
+    items.add("b")
+    assert list(items) == ["a", "b"] and items._tail.data == "b"
+
+
+def test_clear_empties_the_list_and_len_follows_size():
+    items = LinkedList()
+    items.add("a")
+    items.add("b")
+    assert len(items) == 2
+    items.clear()
+    assert len(items) == 0 and items.is_empty() and list(items) == []
